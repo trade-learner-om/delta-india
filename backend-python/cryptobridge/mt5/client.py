@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
+from cryptobridge.mt5.terminal_detection import find_running_terminal_paths
 from cryptobridge.utils.forex_risk import normalize_price_to_symbol, normalize_volume_to_risk
 
 log = logging.getLogger(__name__)
@@ -22,8 +24,12 @@ def _load_mt5():
     try:
         import MetaTrader5 as mt5
     except ImportError as exc:
+        if os.name != "nt":
+            raise LocalMt5Error(
+                "The API process is not on Windows, so it cannot open MetaTrader 5. Run the API on the PC where the terminal is open."
+            ) from exc
         raise LocalMt5Error(
-            "MetaTrader 5 runs on the Windows machine that hosts the terminal."
+            "Install the MetaTrader5 package in the API environment on the PC where the terminal is open."
         ) from exc
     return mt5
 
@@ -78,18 +84,39 @@ class Mt5Client:
         password = str(credentials.get("password") or "")
         server = str(credentials.get("server") or "").strip()
         path = str(credentials.get("path") or "").strip()
+        if not path:
+            found = find_running_terminal_paths()
+            if len(found) == 1:
+                path = found[0]
         if not login or not password or not server or not path:
-            raise LocalMt5Error("MT5 login, password, server, and terminal path are required.")
+            raise LocalMt5Error("MT5 login, password, server, and a running terminal path are required.")
         key = (login, server, path)
         with self._lock:
             if self._active_key != key:
                 mt5.shutdown()
-                ok = mt5.initialize(path=path, login=int(login), password=password, server=server)
+                # Attach to the terminal that is already open. Sending login here switches the account inside that terminal.
+                ok = mt5.initialize(path=path, timeout=60_000)
                 if not ok:
                     self._active_key = None
                     raise LocalMt5Error(_last_error(mt5, "Could not open the MT5 terminal."))
+                self._assert_open_account(mt5, login, server, path)
                 self._active_key = key
             return operation(mt5)
+
+    @staticmethod
+    def _assert_open_account(mt5, login: str, server: str, path: str) -> None:
+        info = mt5.account_info()
+        if info is None:
+            raise LocalMt5Error(_last_error(mt5, "MT5 account information is unavailable."))
+        data = info._asdict()
+        actual_login = str(data.get("login") or "")
+        actual_server = str(data.get("server") or "")
+        if actual_login and actual_login != login:
+            raise LocalMt5Error(
+                f"The open terminal is logged into {actual_login}, not {login}. Start the terminal for this account and detect its path. Path: {path}"
+            )
+        if server and actual_server and actual_server != server:
+            raise LocalMt5Error(f"The open terminal server is {actual_server}, not {server}.")
 
     def account_snapshot(self, credentials: dict[str, str]) -> dict[str, Any]:
         def operation(mt5):

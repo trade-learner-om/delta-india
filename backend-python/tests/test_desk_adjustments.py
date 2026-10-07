@@ -2,6 +2,7 @@ import os
 
 import pytest
 
+from cryptobridge.mt5.client import LocalMt5Error, _load_mt5
 from cryptobridge.mt5.terminal_detection import find_running_terminal_paths, find_running_terminal_processes
 from cryptobridge.services.journal_service import crypto_usd_pnl
 from cryptobridge.services.mt5_account_service import _same_terminal_path
@@ -30,6 +31,12 @@ def test_suggestions_prefer_prefix_and_skip_owned():
 def test_terminal_detection_is_empty_off_windows():
     assert find_running_terminal_processes() == []
     assert find_running_terminal_paths() == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows can import MetaTrader5")
+def test_mt5_package_requires_the_windows_api_process():
+    with pytest.raises(LocalMt5Error, match="not on Windows"):
+        _load_mt5()
 
 
 def test_shared_terminal_paths_match_after_normalizing():

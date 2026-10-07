@@ -12,6 +12,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from cryptobridge.config import settings
 from cryptobridge.exceptions import http_error
 from cryptobridge.mt5.client import LocalMt5Error, Mt5Client
+from cryptobridge.mt5.terminal_detection import find_running_terminal_paths
 from cryptobridge.utils import crypto as secret_crypto
 from cryptobridge.utils.account_names import broker_display_name
 from cryptobridge.utils.forex_risk import calc_quantity, calc_rr
@@ -65,6 +66,10 @@ class Mt5AccountService:
         login = str(login or "").strip()
         server = str(server or "").strip()
         terminal_path = str(terminal_path or "").strip().strip('"')
+        if not terminal_path:
+            found = find_running_terminal_paths()
+            if len(found) == 1:
+                terminal_path = found[0]
         if not login or not password or not server or not terminal_path:
             raise http_error(400, "MT5 account number, password, server, and terminal path are required.")
         existing = await self._accounts.find_one({"userId": user["id"], "login": login})

@@ -26,6 +26,7 @@ dependencies = [
     "eval-type-backport>=0.2.0",
     "python-jose[cryptography]>=3.3.0",
     "tzdata>=2024.1; sys_platform == 'win32'",
+    "MetaTrader5>=5.0.45; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
