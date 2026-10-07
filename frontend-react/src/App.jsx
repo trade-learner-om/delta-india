@@ -449,6 +449,7 @@ export default function App() {
         me={me}
         livePrices={livePrices}
         liveStatus={liveStatus}
+        positionsPayload={positionsPayload}
         onLogout={handleLogout}
         onNotify={notify}
         onSessionRefresh={() => refreshBootstrap(token)}

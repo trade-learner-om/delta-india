@@ -45,6 +45,13 @@ class Mt5AccountService:
             "path": str(data.get("path") or ""),
         }
 
+    async def list_raw_accounts(self, user: dict[str, Any]) -> list[dict[str, Any]]:
+        cursor = self._accounts.find({"userId": user["id"]}).sort("createdAt", 1)
+        return [doc async for doc in cursor]
+
+    def open_book(self, account: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+        return self._client.open_book(self.credentials_for(account))
+
     async def list_accounts(self, user: dict[str, Any]) -> list[dict[str, Any]]:
         selected = str(user.get("selectedAccountId") or "")
         venue = str(user.get("selectedVenue") or "")

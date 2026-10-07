@@ -275,6 +275,57 @@ class Mt5Client:
 
         return self._call(credentials, operation)
 
+    def open_book(self, credentials: dict[str, str]) -> dict[str, list[dict[str, Any]]]:
+        """Running positions and pending orders on the open terminal."""
+
+        def operation(mt5):
+            positions: list[dict[str, Any]] = []
+            for row in mt5.positions_get() or []:
+                data = row._asdict()
+                volume = float(data.get("volume") or 0)
+                if volume == 0:
+                    continue
+                buy = int(data.get("type") or 0) == int(getattr(mt5, "POSITION_TYPE_BUY", 0))
+                positions.append(
+                    {
+                        "ticket": int(data.get("ticket") or 0),
+                        "symbol": str(data.get("symbol") or ""),
+                        "side": "LONG" if buy else "SHORT",
+                        "size": volume,
+                        "entryPrice": float(data.get("price_open") or 0) or None,
+                        "markPrice": float(data.get("price_current") or 0) or None,
+                        "unrealizedPnl": float(data.get("profit") or 0) + float(data.get("swap") or 0),
+                    }
+                )
+            pending_types = {
+                int(getattr(mt5, "ORDER_TYPE_BUY_LIMIT", 2)): ("BUY", "limit"),
+                int(getattr(mt5, "ORDER_TYPE_SELL_LIMIT", 3)): ("SELL", "limit"),
+                int(getattr(mt5, "ORDER_TYPE_BUY_STOP", 4)): ("BUY", "stop"),
+                int(getattr(mt5, "ORDER_TYPE_SELL_STOP", 5)): ("SELL", "stop"),
+                int(getattr(mt5, "ORDER_TYPE_BUY_STOP_LIMIT", 6)): ("BUY", "stop limit"),
+                int(getattr(mt5, "ORDER_TYPE_SELL_STOP_LIMIT", 7)): ("SELL", "stop limit"),
+            }
+            orders: list[dict[str, Any]] = []
+            for row in mt5.orders_get() or []:
+                data = row._asdict()
+                kind = pending_types.get(int(data.get("type") or -1))
+                if kind is None:
+                    continue
+                side, order_type = kind
+                orders.append(
+                    {
+                        "ticket": int(data.get("ticket") or 0),
+                        "symbol": str(data.get("symbol") or ""),
+                        "side": side,
+                        "orderType": order_type,
+                        "price": float(data.get("price_open") or 0) or None,
+                        "size": float(data.get("volume_current") or data.get("volume_initial") or 0) or None,
+                    }
+                )
+            return {"positions": positions, "orders": orders}
+
+        return self._call(credentials, operation)
+
     def search_symbols(self, credentials: dict[str, str], query: str, limit: int = 12) -> list[str]:
         needle = str(query or "").strip().upper()
 

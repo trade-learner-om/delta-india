@@ -142,6 +142,52 @@ def delta_order_view(order: OrderSummary | dict[str, Any], account_id: str) -> d
     }
 
 
+def forex_position_view(row: dict[str, Any], account_id: str, account_name: str) -> dict[str, Any] | None:
+    symbol = str(row.get("symbol") or "")
+    size = _parse_float(row.get("size"))
+    if not symbol or size is None or size == 0:
+        return None
+    side = "LONG" if str(row.get("side") or "").upper() in {"BUY", "LONG"} else "SHORT"
+    signed = abs(size) if side == "LONG" else -abs(size)
+    ticket = row.get("ticket")
+    return {
+        "id": position_id("mt5", account_id, f"{ticket}:{symbol}"),
+        "broker": "mt5",
+        "venue": "forex",
+        "accountId": account_id,
+        "accountName": account_name,
+        "symbol": symbol,
+        "side": side,
+        "size": abs(size),
+        "signedSize": signed,
+        "contractValue": None,
+        "entryPrice": _parse_float(row.get("entryPrice")),
+        "markPrice": _parse_float(row.get("markPrice")),
+        "unrealizedPnlUsd": _parse_float(row.get("unrealizedPnl")) or 0.0,
+    }
+
+
+def forex_order_view(row: dict[str, Any], account_id: str, account_name: str) -> dict[str, Any] | None:
+    symbol = str(row.get("symbol") or "")
+    ticket = row.get("ticket")
+    if not symbol or ticket in (None, ""):
+        return None
+    return {
+        "id": order_id("mt5", account_id, str(ticket)),
+        "broker": "mt5",
+        "venue": "forex",
+        "accountId": account_id,
+        "accountName": account_name,
+        "orderId": ticket,
+        "symbol": symbol,
+        "side": str(row.get("side") or "").upper(),
+        "orderType": str(row.get("orderType") or ""),
+        "status": "pending",
+        "price": _parse_float(row.get("price")),
+        "size": _parse_float(row.get("size")),
+    }
+
+
 def is_open_order_status(status: str) -> bool:
     normalized = str(status or "").upper()
     return normalized in {"PENDING", "OPEN", "PARTIALLY_FILLED", "PARTIALLY FILLED"}

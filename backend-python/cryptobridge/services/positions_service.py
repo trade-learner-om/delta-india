@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -12,11 +13,14 @@ from cryptobridge.delta.market_data import DeltaMarketDataService
 from cryptobridge.delta.private_stream import DeltaPrivateStreamService
 from cryptobridge.delta.rest_client import DeltaRestClient
 from cryptobridge.services.account_service import AccountService
+from cryptobridge.services.mt5_account_service import Mt5AccountService
 from cryptobridge.utils.positions_helpers import (
     compute_open_totals,
     delta_order_view,
     delta_position_view,
     enrich_broker_position_mark,
+    forex_order_view,
+    forex_position_view,
     group_orders_by_broker,
     is_history_order_status,
     is_open_order_status,
@@ -27,6 +31,7 @@ log = logging.getLogger(__name__)
 
 BROADCAST_DEBOUNCE_SECONDS = 0.5
 MTM_REFRESH_SECONDS = 15.0
+FOREX_BOOK_SECONDS = 5.0
 
 
 class PositionsBroadcaster:
@@ -61,12 +66,15 @@ class PositionsService:
         accounts: AccountService,
         private_stream: DeltaPrivateStreamService,
         market: DeltaMarketDataService,
+        mt5_accounts: Mt5AccountService | None = None,
     ) -> None:
         self._db = db
         self._delta = delta
         self._accounts = accounts
         self._private_stream = private_stream
         self._market = market
+        self._mt5_accounts = mt5_accounts
+        self._forex_cache: dict[str, tuple[float, list[dict[str, Any]], list[dict[str, Any]]]] = {}
         self.broadcaster = PositionsBroadcaster()
         self._live_refs: dict[str, int] = {}
         self._broadcast_tasks: dict[str, asyncio.Task] = {}
@@ -238,10 +246,15 @@ class PositionsService:
                     raw_orders = await self._delta.fetch_open_orders(api_key, api_secret)
                 else:
                     raw_positions, raw_orders = account_state
-                positions.extend(self._map_delta_positions(raw_positions, account_id))
-                orders.extend(self._map_delta_open_orders(raw_orders, account_id))
+                name = str(doc.get("accountName") or "")
+                positions.extend(self._map_delta_positions(raw_positions, account_id, name))
+                orders.extend(self._map_delta_open_orders(raw_orders, account_id, name))
             except Exception as exc:  # noqa: BLE001
                 log.warning("Broker fetch failed user=%s account=%s: %s", user_id, account_id, exc)
+
+        forex_positions, forex_orders = await self._forex_open_book(user)
+        positions.extend(forex_positions)
+        orders.extend(forex_orders)
 
         totals = compute_open_totals(positions)
         return {
@@ -254,10 +267,45 @@ class PositionsService:
             "updatedAt": self._now().isoformat(),
         }
 
+    async def _forex_open_book(self, user: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        if self._mt5_accounts is None:
+            return [], []
+        user_id = user["id"]
+        cached = self._forex_cache.get(user_id)
+        now = time.monotonic()
+        if cached and now - cached[0] < FOREX_BOOK_SECONDS:
+            return cached[1], cached[2]
+        positions: list[dict[str, Any]] = []
+        orders: list[dict[str, Any]] = []
+        try:
+            docs = await self._mt5_accounts.list_raw_accounts(user)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Forex account list failed user=%s: %s", user_id, exc)
+            return [], []
+        for doc in docs:
+            account_id = str(doc["_id"])
+            name = str(doc.get("accountName") or "")
+            try:
+                book = await asyncio.to_thread(self._mt5_accounts.open_book, doc)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Forex book failed user=%s account=%s: %s", user_id, account_id, exc)
+                continue
+            for row in book.get("positions") or []:
+                view = forex_position_view(row, account_id, name)
+                if view:
+                    positions.append(view)
+            for row in book.get("orders") or []:
+                view = forex_order_view(row, account_id, name)
+                if view:
+                    orders.append(view)
+        self._forex_cache[user_id] = (now, positions, orders)
+        return positions, orders
+
     def _map_delta_positions(
         self,
         rows: list[dict[str, Any]],
         account_id: str,
+        account_name: str = "",
     ) -> list[dict[str, Any]]:
         mapped: list[dict[str, Any]] = []
         tickers = self._market.latest_tickers
@@ -267,11 +315,13 @@ class PositionsService:
                 enriched, account_id, source="broker", linked_trade_id=None, trade_type=None
             )
             if view:
+                view["accountName"] = account_name
+                view["venue"] = "crypto"
                 mapped.append(view)
         return mapped
 
     def _map_delta_open_orders(
-        self, rows: list[Any], account_id: str
+        self, rows: list[Any], account_id: str, account_name: str = ""
     ) -> list[dict[str, Any]]:
         mapped: list[dict[str, Any]] = []
         for order in rows:
@@ -281,7 +331,10 @@ class PositionsService:
                     continue
             elif not is_open_order_status(order.status):
                 continue
-            mapped.append(delta_order_view(order, account_id))
+            view = delta_order_view(order, account_id)
+            view["accountName"] = account_name
+            view["venue"] = "crypto"
+            mapped.append(view)
         return mapped
 
     async def build_history_payload(

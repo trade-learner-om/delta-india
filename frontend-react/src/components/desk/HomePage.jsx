@@ -1,11 +1,15 @@
+import { useEffect, useMemo, useState } from "react";
 import { BookOpen } from "lucide-react";
 import { motion } from "framer-motion";
+import { api } from "../../api";
+import { decoratePositionRow } from "../positions/positionsUtils";
 import AreaChart from "./AreaChart";
 import WatchlistRail from "./WatchlistRail";
 import {
   cumulativeSeries,
   formatIst,
   formatPercent,
+  formatPrice,
   ledgerMuted,
   ledgerPanel,
   money,
@@ -16,7 +20,53 @@ import {
   sumVenue,
 } from "./deskFormat";
 
-export default function HomePage({ token, entries, watchlist, livePrices, onOpenTrade, onWatchlistChange, onNotify, onOpenJournal }) {
+function newerBook(rest, live) {
+  if (!live || live.type !== "positions") return rest;
+  if (!rest) return live;
+  const liveAt = Date.parse(live.updatedAt || "") || 0;
+  const restAt = Date.parse(rest.updatedAt || "") || 0;
+  return liveAt >= restAt ? live : rest;
+}
+
+function sideLabel(side) {
+  const value = String(side || "").toUpperCase();
+  if (value === "LONG" || value === "BUY") return "Buy";
+  if (value === "SHORT" || value === "SELL") return "Sell";
+  return value || "—";
+}
+
+function sizeLabel(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+  return String(number);
+}
+
+export default function HomePage({ token, entries, watchlist, livePrices, positionsPayload, onOpenTrade, onWatchlistChange, onNotify, onOpenJournal }) {
+  const [restBook, setRestBook] = useState(null);
+  useEffect(() => {
+    if (!token) return undefined;
+    let cancelled = false;
+    const load = () => {
+      api("/positions/open", { token })
+        .then((data) => {
+          if (!cancelled) setRestBook(data);
+        })
+        .catch(() => {});
+    };
+    load();
+    const timer = setInterval(load, 10000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [token]);
+
+  const book = useMemo(() => newerBook(restBook, positionsPayload), [restBook, positionsPayload]);
+  const positions = useMemo(
+    () => (book?.openPositions || []).map((row) => decoratePositionRow(row, livePrices)),
+    [book, livePrices],
+  );
+  const orders = book?.openOrders || [];
   const recent = entries.slice(0, 5);
   const crypto = cumulativeSeries(entries, "crypto");
   const forex = cumulativeSeries(entries, "forex");
@@ -31,6 +81,12 @@ export default function HomePage({ token, entries, watchlist, livePrices, onOpen
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto]">
       <div className="space-y-4">
+        {positions.length || orders.length ? (
+          <div className={`grid gap-3 ${positions.length && orders.length ? "md:grid-cols-2" : ""}`}>
+            {positions.length ? <RunningPositions rows={positions} /> : null}
+            {orders.length ? <PendingOrders rows={orders} /> : null}
+          </div>
+        ) : null}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {cards.map(([label, value, series]) => {
             const change = seriesChangePercent(series);
@@ -41,14 +97,14 @@ export default function HomePage({ token, entries, watchlist, livePrices, onOpen
                 animate={{ opacity: 1, y: 0 }}
                 className={`relative overflow-hidden px-4 py-3 ${ledgerPanel}`}
               >
-                <div className="relative z-10">
+                <div className="pointer-events-none relative z-10">
                   <p className={`text-xs uppercase tracking-[0.16em] ${ledgerMuted}`}>{label}</p>
                   <div className="mt-2 flex items-end justify-between gap-2">
                     <p className={`text-2xl font-semibold ${pnlClass(value)}`}>{money(value)}</p>
                     {change != null ? <span className={pnlPill(change)}>{formatPercent(change)}</span> : null}
                   </div>
                 </div>
-                <div className="pointer-events-none absolute inset-x-2 bottom-0 opacity-80">
+                <div className="absolute inset-x-2 bottom-0 opacity-80">
                   <AreaChart values={series} positive={(series.at(-1) ?? 0) >= 0} className="h-12" quiet />
                 </div>
               </motion.section>
@@ -144,6 +200,74 @@ export default function HomePage({ token, entries, watchlist, livePrices, onOpen
         onNotify={onNotify}
       />
     </div>
+  );
+}
+
+function RunningPositions({ rows }) {
+  return (
+    <section className={`p-4 ${ledgerPanel}`}>
+      <h2 className={`text-sm ${ledgerMuted}`}>Running positions</h2>
+      <table className="mt-3 w-full text-left text-sm">
+        <thead className={`text-xs uppercase tracking-wider ${ledgerMuted}`}>
+          <tr>
+            <th className="py-2 font-medium">Symbol</th>
+            <th className="py-2 font-medium">Side</th>
+            <th className="py-2 text-right font-medium">Size</th>
+            <th className="py-2 text-right font-medium">Entry</th>
+            <th className="py-2 text-right font-medium">Mark</th>
+            <th className="py-2 text-right font-medium">P/L</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id} className="border-t border-[var(--ledger-border)]">
+              <td className="py-2">
+                <span className="block">{row.symbol}</span>
+                <span className={`block text-xs capitalize ${ledgerMuted}`}>{row.accountName} · {row.venue}</span>
+              </td>
+              <td className="py-2">{sideLabel(row.side)}</td>
+              <td className="py-2 text-right">{sizeLabel(row.size)}</td>
+              <td className="py-2 text-right">{formatPrice(row.entryPrice)}</td>
+              <td className="py-2 text-right">{formatPrice(row.markPrice)}</td>
+              <td className="py-2 text-right"><span className={pnlPill(row.unrealizedPnlUsd)}>{money(row.unrealizedPnlUsd)}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function PendingOrders({ rows }) {
+  return (
+    <section className={`p-4 ${ledgerPanel}`}>
+      <h2 className={`text-sm ${ledgerMuted}`}>Pending orders</h2>
+      <table className="mt-3 w-full text-left text-sm">
+        <thead className={`text-xs uppercase tracking-wider ${ledgerMuted}`}>
+          <tr>
+            <th className="py-2 font-medium">Symbol</th>
+            <th className="py-2 font-medium">Side</th>
+            <th className="py-2 font-medium">Type</th>
+            <th className="py-2 text-right font-medium">Price</th>
+            <th className="py-2 text-right font-medium">Size</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id} className="border-t border-[var(--ledger-border)]">
+              <td className="py-2">
+                <span className="block">{row.symbol}</span>
+                <span className={`block text-xs capitalize ${ledgerMuted}`}>{row.accountName} · {row.venue}</span>
+              </td>
+              <td className="py-2">{sideLabel(row.side)}</td>
+              <td className={`py-2 capitalize ${ledgerMuted}`}>{row.orderType || "—"}</td>
+              <td className="py-2 text-right">{formatPrice(row.price)}</td>
+              <td className="py-2 text-right">{sizeLabel(row.size ?? row.unfilledSize)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }
 
