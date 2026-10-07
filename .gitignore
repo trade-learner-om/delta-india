@@ -1,0 +1,33 @@
+# Runtime
+.run/
+logs/
+backend-python/data/
+
+# Python
+backend-python/.venv/
+backend-python/**/__pycache__/
+backend-python/**/*.pyc
+backend-python/.pytest_cache/
+backend-python/**/*.egg-info/
+backend-python/.env
+
+# Node
+frontend-react/node_modules/
+frontend-react/dist/
+amplify-deploy.zip
+
+# Java legacy build output
+backend-webflux/target/
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Env secrets (backend secrets stay local; frontend API URLs are in src/config/endpoints.js)
+.env
+.env.local
+!frontend-react/.env.example
+!frontend-react/.env.production

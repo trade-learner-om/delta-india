@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+html {
+  color: #e6e2d8;
+  background-color: #16181d;
+}
+
+html.dark {
+  color: #fafafa;
+  background-color: #09090b;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: inherit;
+  color: inherit;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Soft page-wide bias wash (Live Running) — keep text readable */
+.st-options-page--green,
+.st-options-page--red {
+  border-radius: 1rem;
+  margin-top: 0.75rem;
+  transition: background-color 0.35s ease, box-shadow 0.35s ease;
+}
+
+.st-options-page--green {
+  background:
+    linear-gradient(180deg, rgba(16, 185, 129, 0.08), rgba(16, 185, 129, 0.02) 42%, transparent 78%),
+    transparent;
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.12);
+}
+
+.st-options-page--red {
+  background:
+    linear-gradient(180deg, rgba(244, 63, 94, 0.08), rgba(244, 63, 94, 0.02) 42%, transparent 78%),
+    transparent;
+  box-shadow: inset 0 0 0 1px rgba(244, 63, 94, 0.12);
+}
+
+html.dark .st-options-page--green {
+  background:
+    linear-gradient(180deg, rgba(52, 211, 153, 0.1), rgba(52, 211, 153, 0.03) 42%, transparent 78%),
+    transparent;
+  box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.14);
+}
+
+html.dark .st-options-page--red {
+  background:
+    linear-gradient(180deg, rgba(251, 113, 133, 0.1), rgba(251, 113, 133, 0.03) 42%, transparent 78%),
+    transparent;
+  box-shadow: inset 0 0 0 1px rgba(251, 113, 133, 0.14);
+}

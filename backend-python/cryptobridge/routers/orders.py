@@ -1,0 +1,70 @@
+from __future__ import annotations
+from typing import Any
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
+
+from cryptobridge.dependencies import get_mt5_account_service, get_order_service, get_user
+from cryptobridge.services.mt5_account_service import Mt5AccountService
+from cryptobridge.services.order_service import OrderService
+
+router = APIRouter(prefix="/api/orders", tags=["orders"])
+
+
+class PlaceOrderRequest(BaseModel):
+    symbol: str
+    order_type: str | None = Field(default="LIMIT", alias="orderType")
+    side: str
+    entry: float | None = None
+    size: float | None = None
+    quantity: float | None = None
+    stop_loss: float | None = Field(None, alias="stopLoss")
+    target: float | None = None
+    comment: str | None = None
+    venue: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+@router.get("/active")
+async def active_orders(user=Depends(get_user), orders: OrderService = Depends(get_order_service)):
+    items = await orders.list_active(user)
+    return {"orders": items}
+
+
+@router.post("/preview")
+async def preview_order(
+    body: PlaceOrderRequest,
+    user=Depends(get_user),
+    orders: OrderService = Depends(get_order_service),
+    mt5_accounts: Mt5AccountService = Depends(get_mt5_account_service),
+):
+    payload = body.model_dump(by_alias=True)
+    if str(payload.get("venue") or user.get("selectedVenue") or "") == "forex":
+        return await mt5_accounts.preview(user, payload)
+    return await orders.preview(user, payload)
+
+
+@router.post("")
+async def place_order(
+    body: PlaceOrderRequest,
+    user=Depends(get_user),
+    orders: OrderService = Depends(get_order_service),
+    mt5_accounts: Mt5AccountService = Depends(get_mt5_account_service),
+):
+    payload = body.model_dump(by_alias=True)
+    if payload.get("quantity") is not None and payload.get("size") is None:
+        payload["size"] = payload["quantity"]
+    if str(payload.get("venue") or user.get("selectedVenue") or "") == "forex":
+        return await mt5_accounts.place(user, payload)
+    return await orders.place(user, payload)
+
+
+@router.post("/{order_id}/cancel")
+async def cancel_order(
+    order_id: int,
+    user=Depends(get_user),
+    orders: OrderService = Depends(get_order_service),
+):
+    await orders.cancel(user, order_id)
+    return {"ok": True}
