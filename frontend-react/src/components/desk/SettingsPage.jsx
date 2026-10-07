@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../../api";
 
 export default function SettingsPage({ token, me, deltaAccounts, mt5Accounts, onReload, onNotify }) {
@@ -6,6 +6,31 @@ export default function SettingsPage({ token, me, deltaAccounts, mt5Accounts, on
   const [mt5Form, setMt5Form] = useState({ login: "", password: "", server: "", terminalPath: "" });
   const [symbol, setSymbol] = useState("");
   const [venue, setVenue] = useState("crypto");
+  const [serverIp, setServerIp] = useState("");
+  const [serverIpError, setServerIpError] = useState("");
+  const [ipCopied, setIpCopied] = useState(false);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    let cancelled = false;
+    api("/meta/public-ip", { token })
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.ip) setServerIp(data.ip);
+        else setServerIpError(data?.error || "Could not read the server IP.");
+      })
+      .catch((err) => {
+        if (!cancelled) setServerIpError(err.message || "Could not read the server IP.");
+      });
+    return () => { cancelled = true; };
+  }, [token]);
+
+  const copyIp = async () => {
+    if (!serverIp) return;
+    await navigator.clipboard.writeText(serverIp);
+    setIpCopied(true);
+    window.setTimeout(() => setIpCopied(false), 2000);
+  };
 
   const addDelta = async () => {
     await api("/accounts", { method: "POST", token, body: deltaForm });
@@ -60,6 +85,14 @@ export default function SettingsPage({ token, me, deltaAccounts, mt5Accounts, on
           onDelete={(account) => remove(account, "crypto")}
           onRisk={(account, risk) => setRisk(account, "crypto", risk)}
         />
+        <div className="mt-4 rounded-xl bg-[#16181d] px-3 py-3 text-sm">
+          <p className="text-xs uppercase tracking-[0.14em] text-[#9a958c]">Whitelist this IP on Delta</p>
+          <p className="mt-2 font-mono text-lg text-[#8eafc4]">{serverIp || serverIpError || "Loading server IP..."}</p>
+          <p className="mt-1 text-xs text-[#9a958c]">Delta allows signed calls only from this server address. Copy it into the API key profile before adding the account.</p>
+          <button type="button" disabled={!serverIp} onClick={() => copyIp().catch(() => onNotify("error", "Could not copy the IP."))} className="mt-2 text-xs text-[#8eafc4] disabled:opacity-50">
+            {ipCopied ? "Copied" : "Copy IP"}
+          </button>
+        </div>
         <div className="mt-4 grid gap-2">
           <input className="rounded-lg border border-white/10 bg-[#16181d] px-3 py-2" placeholder="Delta API key" value={deltaForm.apiKey} onChange={(event) => setDeltaForm({ ...deltaForm, apiKey: event.target.value })} />
           <input className="rounded-lg border border-white/10 bg-[#16181d] px-3 py-2" placeholder="Delta API secret" type="password" value={deltaForm.apiSecret} onChange={(event) => setDeltaForm({ ...deltaForm, apiSecret: event.target.value })} />
