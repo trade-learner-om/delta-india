@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../api";
+import { livePriceFromTick, lookupLiveTick } from "../../utils/pricePrecision";
 import ChoiceSwitch from "./ChoiceSwitch";
-import { formatRr, ledgerField, ledgerMuted, ledgerPanel, money, rewardRisk } from "./deskFormat";
+import { formatPrice, formatRr, ledgerField, ledgerMuted, ledgerPanel, money, rewardRisk } from "./deskFormat";
 
 const EMPTY = { venue: "crypto", symbol: "", side: "BUY", orderType: "MARKET", entry: "", stopLoss: "", target: "" };
 
@@ -10,22 +11,90 @@ function accountForVenue(venue, deltaAccounts, mt5Accounts) {
   return (list || []).find((account) => account.selected) || ((list || []).length === 1 ? list[0] : null);
 }
 
-export default function TradePage({ token, deltaAccounts, mt5Accounts, onNotify, onReload }) {
+export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrices, onNotify, onReload }) {
   const [form, setForm] = useState(EMPTY);
   const [preview, setPreview] = useState(null);
+  const [sizeError, setSizeError] = useState("");
   const [pending, setPending] = useState(false);
   const [risk, setRisk] = useState("");
+  const [suggestions, setSuggestions] = useState([]);
+  const [suggestMessage, setSuggestMessage] = useState("");
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const chosenSymbol = useRef("");
+  const previewSeq = useRef(0);
   const account = accountForVenue(form.venue, deltaAccounts, mt5Accounts);
   const liveRr = rewardRisk(form.side, form.entry, form.stopLoss, form.target);
   const stopDistance = Math.abs(Number(form.entry) - Number(form.stopLoss));
+  const livePrice = livePriceFromTick(lookupLiveTick(livePrices, form.symbol));
 
   useEffect(() => {
     setRisk(account?.riskAmount ?? "");
   }, [account?.id, account?.riskAmount, form.venue]);
 
+  useEffect(() => {
+    const text = form.symbol.trim();
+    if (text.length < 2 || text.toUpperCase() === chosenSymbol.current) {
+      setSuggestions([]);
+      setSuggestMessage("");
+      setSuggestOpen(false);
+      return undefined;
+    }
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      const params = new URLSearchParams({ venue: form.venue, q: text, includeOwned: "true" });
+      api(`/watchlist/suggest?${params}`, { token })
+        .then((data) => {
+          if (cancelled) return;
+          const rows = data.suggestions || [];
+          setSuggestions(rows);
+          setSuggestMessage(data.message || (rows.length ? "" : "No matches"));
+          setSuggestOpen(true);
+          setHighlight(0);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setSuggestions([]);
+          setSuggestMessage(err.message || "Suggestions are unavailable.");
+          setSuggestOpen(true);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [form.symbol, form.venue, token]);
+
   const set = (key) => (event) => {
     setPreview(null);
+    setSizeError("");
+    if (key === "symbol") chosenSymbol.current = "";
     setForm((current) => ({ ...current, [key]: event.target.value }));
+  };
+
+  const chooseSymbol = (symbol) => {
+    const next = String(symbol || "").toUpperCase();
+    chosenSymbol.current = next;
+    setSuggestOpen(false);
+    setSuggestions([]);
+    setPreview(null);
+    setForm((current) => ({ ...current, symbol: next }));
+  };
+
+  const onSymbolKeyDown = (event) => {
+    if (!suggestOpen || suggestions.length === 0) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setHighlight((index) => (index + 1) % suggestions.length);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setHighlight((index) => (index - 1 + suggestions.length) % suggestions.length);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      chooseSymbol(suggestions[highlight]?.symbol);
+    } else if (event.key === "Escape") {
+      setSuggestOpen(false);
+    }
   };
 
   const body = {
@@ -60,19 +129,42 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, onNotify,
     onReload?.();
   };
 
-  const runPreview = async () => {
-    setPending(true);
+  const runPreview = async ({ quiet = false } = {}) => {
+    const seq = previewSeq.current + 1;
+    previewSeq.current = seq;
+    if (!quiet) setPending(true);
     try {
       await ensureSelected();
       const result = await api("/orders/preview", { method: "POST", token, body });
+      if (seq !== previewSeq.current) return;
       setPreview(result);
+      setSizeError("");
     } catch (err) {
+      if (seq !== previewSeq.current) return;
       setPreview(null);
-      onNotify("error", err.message || "Could not size this order.");
+      const message = err.message || "Could not size this order.";
+      setSizeError(message);
+      if (!quiet) onNotify("error", message);
     } finally {
-      setPending(false);
+      if (!quiet && seq === previewSeq.current) setPending(false);
     }
   };
+
+  useEffect(() => {
+    const entry = Number(form.entry);
+    const stop = Number(form.stopLoss);
+    const symbol = form.symbol.trim();
+    if (symbol.length < 2 || !(entry > 0) || !(stop > 0) || entry === stop || !(Number(risk) > 0)) {
+      return undefined;
+    }
+    const handle = window.setTimeout(() => {
+      runPreview({ quiet: true });
+    }, 400);
+    return () => {
+      previewSeq.current += 1;
+      window.clearTimeout(handle);
+    };
+  }, [form.symbol, form.entry, form.stopLoss, form.side, form.venue, form.target, risk, account?.id]);
 
   const place = async () => {
     setPending(true);
@@ -92,7 +184,7 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, onNotify,
     ["Account", account?.accountName || "—"],
     ["Venue", form.venue],
     ["Risk", Number(risk) > 0 ? money(risk) : "—"],
-    ["Quantity", preview?.quantity ?? "—"],
+    ["Quantity", preview?.quantity ?? (sizeError || "—")],
     ["R:R", formatRr(liveRr)],
     ["Stop distance", Number.isFinite(stopDistance) && stopDistance > 0 ? stopDistance : "—"],
   ];
@@ -133,9 +225,36 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, onNotify,
             )}
             {account ? <span className={`mt-1 block text-xs ${ledgerMuted}`}>{account.accountName}</span> : null}
           </label>
-          <label className="text-sm">
+          <label className={`text-sm ${suggestOpen ? "relative z-30" : "relative"}`}>
             Symbol
-            <input className={`mt-1 ${ledgerField}`} value={form.symbol} onChange={set("symbol")} />
+            <input
+              className={`mt-1 ${ledgerField}`}
+              value={form.symbol}
+              onChange={set("symbol")}
+              onKeyDown={onSymbolKeyDown}
+              onFocus={() => {
+                if (suggestions.length) setSuggestOpen(true);
+              }}
+            />
+            {livePrice != null ? <span className={`mt-1 block text-xs ${ledgerMuted}`}>{formatPrice(livePrice)}</span> : null}
+            {suggestOpen && (suggestions.length || suggestMessage) ? (
+              <div className={`absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-xl shadow-xl ${ledgerPanel}`}>
+                {suggestMessage ? <p className={`px-3 py-2 text-xs ${ledgerMuted}`}>{suggestMessage}</p> : null}
+                {suggestions.map((item, index) => (
+                  <button
+                    key={`${item.venue}:${item.symbol}`}
+                    type="button"
+                    className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${index === highlight ? "bg-[var(--ledger-accent)]/15" : ""}`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onMouseEnter={() => setHighlight(index)}
+                    onClick={() => chooseSymbol(item.symbol)}
+                  >
+                    <span>{item.symbol}</span>
+                    <span className="text-[11px] uppercase tracking-wider text-[var(--ledger-accent)]">{item.venue}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </label>
           <ChoiceSwitch
             label="Side"
@@ -162,10 +281,10 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, onNotify,
         <div className={`mt-4 p-3 text-sm ${ledgerPanel}`}>
           <p className={ledgerMuted}>Reward to risk</p>
           <p className="mt-1 text-2xl font-semibold">{formatRr(liveRr)}</p>
-          <p className={`mt-1 ${ledgerMuted}`}>Quantity {preview?.quantity ?? "appears after preview"}</p>
+          <p className={`mt-1 ${ledgerMuted}`}>Quantity {preview?.quantity ?? (sizeError || "fills in after entry and stop")}</p>
         </div>
         <div className="mt-5 flex gap-2">
-          <button type="button" disabled={pending} onClick={runPreview} className="rounded-full border border-[var(--ledger-accent)] px-4 py-2 text-sm text-[var(--ledger-accent)]">
+          <button type="button" disabled={pending} onClick={() => runPreview()} className="rounded-full border border-[var(--ledger-accent)] px-4 py-2 text-sm text-[var(--ledger-accent)]">
             Preview
           </button>
           <button

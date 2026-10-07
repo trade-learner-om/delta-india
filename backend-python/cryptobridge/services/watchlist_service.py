@@ -75,9 +75,9 @@ class WatchlistService:
             {"userId": user["id"], "venue": _venue(venue), "symbol": str(symbol or "").strip().upper()}
         )
 
-    async def suggest(self, user: dict[str, Any], venue: str, query: str) -> dict[str, Any]:
+    async def suggest(self, user: dict[str, Any], venue: str, query: str, *, include_owned: bool = False) -> dict[str, Any]:
         venue = _venue(venue)
-        owned = {
+        owned = set() if include_owned else {
             str(item.get("symbol") or "")
             for item in await self.list_items(user)
             if item.get("venue") == venue

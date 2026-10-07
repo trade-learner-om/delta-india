@@ -115,6 +115,7 @@ export default function DeskShell({ token, me, livePrices, liveStatus, onLogout,
               token={token}
               deltaAccounts={deltaAccounts}
               mt5Accounts={mt5Accounts}
+              livePrices={livePrices}
               onNotify={onNotify}
               onReload={reload}
             />

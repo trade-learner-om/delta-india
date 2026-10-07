@@ -18,10 +18,11 @@ class WatchlistRequest(BaseModel):
 async def suggest_watchlist(
     venue: str,
     q: str = "",
+    includeOwned: bool = False,
     user=Depends(get_user),
     watchlist: WatchlistService = Depends(get_watchlist_service),
 ):
-    return await watchlist.suggest(user, venue, q)
+    return await watchlist.suggest(user, venue, q, include_owned=includeOwned)
 
 
 @router.get("")
