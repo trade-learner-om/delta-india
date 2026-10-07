@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { BookOpen, LayoutDashboard, LogOut, Moon, Settings, Sun, TrendingUp } from "lucide-react";
-import { api } from "../../api";
+import { api, apiUpload } from "../../api";
 import { applyThemeClass, readStoredTheme, writeStoredTheme } from "../../utils/theme/themeStorage";
 import { ledgerMuted, ledgerPanel } from "./deskFormat";
 import HomePage from "./HomePage";
@@ -151,9 +151,16 @@ export default function DeskShell({ token, me, livePrices, liveStatus, onLogout,
           trade={openTrade}
           onClose={() => setOpenTrade(null)}
           onSaved={async (trade) => {
-            if (trade.id) {
-              await api(`/journal/${trade.id}`, { method: "PATCH", token, body: { setup: trade.setup, reason: trade.reason } });
-            }
+            const saved = trade.id
+              ? await api(`/journal/${trade.id}`, { method: "PATCH", token, body: { setup: trade.setup, reason: trade.reason } })
+              : trade;
+            await reload();
+            return saved;
+          }}
+          onUploadChart={async (trade, file) => {
+            if (!trade?.id || !file) return;
+            await apiUpload(`/journal/${trade.id}/chart`, token, file);
+            onNotify("success", "Chart snapshot saved.");
             await reload();
           }}
         />

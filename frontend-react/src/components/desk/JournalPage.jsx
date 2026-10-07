@@ -97,14 +97,13 @@ export default function JournalPage({ token, deltaAccounts = [], mt5Accounts = [
   }, [symbol, day, side, outcome]);
 
   const saveTrade = async (trade) => {
-    if (trade.savedAt && trade.id) {
-      await api(`/journal/${trade.id}`, {
+    const saved = trade.savedAt && trade.id
+      ? await api(`/journal/${trade.id}`, {
         method: "PATCH",
         token,
         body: { setup: trade.setup, reason: trade.reason },
-      });
-    } else {
-      await api("/journal", {
+      })
+      : await api("/journal", {
         method: "POST",
         token,
         body: {
@@ -116,11 +115,11 @@ export default function JournalPage({ token, deltaAccounts = [], mt5Accounts = [
           accountId: query?.accountIds || [],
         },
       });
-    }
     onNotify("success", "Journal saved.");
     await loadSaved();
     if (query) await fetchRecent(query);
     onChanged?.();
+    return saved;
   };
 
   const upload = async (trade, file) => {
@@ -307,7 +306,15 @@ export default function JournalPage({ token, deltaAccounts = [], mt5Accounts = [
           </div>
         </div>
       </section>
-      {open ? <TradeDetailModal token={token} trade={open} onClose={() => setOpen(null)} onSaved={saveTrade} /> : null}
+      {open ? (
+        <TradeDetailModal
+          token={token}
+          trade={open}
+          onClose={() => setOpen(null)}
+          onSaved={saveTrade}
+          onUploadChart={upload}
+        />
+      ) : null}
     </div>
   );
 }

@@ -1,23 +1,35 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiBlob } from "../../api";
 import { formatIst, ledgerField, ledgerMuted, ledgerPanel, money, pnlClass } from "./deskFormat";
 
-export default function TradeDetailModal({ token, trade, onClose, onSaved }) {
+const CHART_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+function chartFileFromClipboard(clipboard) {
+  const items = Array.from(clipboard?.items || []);
+  const image = items.find((item) => String(item.type || "").startsWith("image/"));
+  if (image) return image.getAsFile();
+  return Array.from(clipboard?.files || []).find((file) => String(file.type || "").startsWith("image/")) || null;
+}
+
+export default function TradeDetailModal({ token, trade, onClose, onSaved, onUploadChart }) {
   const [setup, setSetup] = useState(trade?.setup || "");
   const [reason, setReason] = useState(trade?.reason || "");
   const [chartUrl, setChartUrl] = useState("");
+  const [chartFile, setChartFile] = useState(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const localUrl = useRef("");
+  const panelRef = useRef(null);
   const locked = Boolean(trade?.locked);
   const saved = Boolean(trade?.id && trade?.savedAt);
 
   useEffect(() => {
     let url = "";
     let cancelled = false;
-    if (token && trade?.id && trade?.hasChart) {
+    if (token && trade?.id && trade?.hasChart && !localUrl.current) {
       apiBlob(`/journal/${trade.id}/chart`, token)
         .then((blob) => {
-          if (cancelled) return;
+          if (cancelled || localUrl.current) return;
           url = URL.createObjectURL(blob);
           setChartUrl(url);
         })
@@ -29,13 +41,68 @@ export default function TradeDetailModal({ token, trade, onClose, onSaved }) {
     };
   }, [token, trade]);
 
+  useEffect(() => () => {
+    if (localUrl.current) URL.revokeObjectURL(localUrl.current);
+  }, []);
+
+  useEffect(() => {
+    panelRef.current?.focus();
+  }, []);
+
   if (!trade) return null;
+
+  const showChartFile = (file) => {
+    if (localUrl.current) URL.revokeObjectURL(localUrl.current);
+    const url = URL.createObjectURL(file);
+    localUrl.current = url;
+    setChartUrl(url);
+  };
+
+  const acceptChart = async (file) => {
+    if (locked || !file) return;
+    const type = String(file.type || "").toLowerCase();
+    if (!CHART_TYPES.has(type)) {
+      setError("Chart snapshot must be a PNG, JPEG, or WebP image.");
+      return;
+    }
+    if (file.size > 5_000_000) {
+      setError("Chart snapshot must be under 5 MB.");
+      return;
+    }
+    setError("");
+    showChartFile(file);
+    if (trade.id) {
+      setPending(true);
+      try {
+        await onUploadChart?.(trade, file);
+        setChartFile(null);
+      } catch (err) {
+        setError(err.message || "Chart snapshot was not saved.");
+      } finally {
+        setPending(false);
+      }
+      return;
+    }
+    setChartFile(file);
+  };
+
+  const pasteChart = (event) => {
+    if (locked) return;
+    const file = chartFileFromClipboard(event.clipboardData);
+    if (!file) return;
+    event.preventDefault();
+    acceptChart(file);
+  };
 
   const save = async () => {
     setPending(true);
     setError("");
     try {
-      await onSaved({ ...trade, setup, reason });
+      const savedEntry = await onSaved({ ...trade, setup, reason });
+      const entry = savedEntry?.id ? savedEntry : trade;
+      if (chartFile && entry?.id) {
+        await onUploadChart?.(entry, chartFile);
+      }
       onClose();
     } catch (err) {
       setError(err.message || "Could not save this trade.");
@@ -47,8 +114,11 @@ export default function TradeDetailModal({ token, trade, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div
-        className={`max-h-[90vh] w-full max-w-xl overflow-y-auto p-6 shadow-2xl ${ledgerPanel}`}
+        ref={panelRef}
+        tabIndex={-1}
+        className={`max-h-[90vh] w-full max-w-xl overflow-y-auto p-6 shadow-2xl outline-none ${ledgerPanel}`}
         onClick={(event) => event.stopPropagation()}
+        onPaste={pasteChart}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -76,6 +146,24 @@ export default function TradeDetailModal({ token, trade, onClose, onSaved }) {
           ))}
         </dl>
         {chartUrl ? <img src={chartUrl} alt="Chart snapshot" className="mt-4 w-full rounded-xl" /> : null}
+        {locked ? null : (
+          <div className="mt-4">
+            <label className="inline-flex cursor-pointer rounded-full border border-[var(--ledger-accent)] px-4 py-2 text-sm text-[var(--ledger-accent)]">
+              Upload chart
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  acceptChart(file);
+                }}
+              />
+            </label>
+            <p className={`mt-2 text-sm ${ledgerMuted}`}>Or paste an image from the clipboard.</p>
+          </div>
+        )}
         <label className="mt-4 block text-sm">
           Trade setup
           <input
