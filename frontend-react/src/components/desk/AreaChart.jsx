@@ -1,8 +1,11 @@
-export default function AreaChart({ values, positive }) {
+import { ledgerMuted } from "./deskFormat";
+
+export default function AreaChart({ values, positive, className = "h-28", quiet = false }) {
   const width = 320;
   const height = 120;
-  if (!values.length) {
-    return <p className="text-sm text-[#9a958c]">No saved trades yet.</p>;
+  if (!values?.length) {
+    if (quiet) return null;
+    return <p className={`text-sm ${ledgerMuted}`}>No saved trades yet.</p>;
   }
   const min = Math.min(0, ...values);
   const max = Math.max(0, ...values);
@@ -15,9 +18,9 @@ export default function AreaChart({ values, positive }) {
   });
   const line = points.map(([x, y]) => `${x},${y}`).join(" ");
   const area = `0,${height} ${line} ${width},${height}`;
-  const stroke = positive ? "#7d9a84" : "#c48b84";
+  const stroke = positive ? "var(--ledger-profit)" : "var(--ledger-loss)";
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-28 w-full" role="img">
+    <svg viewBox={`0 0 ${width} ${height}`} className={`w-full ${className}`} role="img">
       <polygon points={area} fill={stroke} opacity="0.18" />
       <polyline points={line} fill="none" stroke={stroke} strokeWidth="2" />
     </svg>

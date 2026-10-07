@@ -4,16 +4,29 @@
 
 :root {
   font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
-}
-
-html {
-  color: #e6e2d8;
-  background-color: #16181d;
+  --ledger-canvas: #f8fafc;
+  --ledger-surface: #ffffff;
+  --ledger-border: #e2e8f0;
+  --ledger-text: #0f172a;
+  --ledger-muted: #64748b;
+  --ledger-accent: #4f46e5;
+  --ledger-profit: #059669;
+  --ledger-loss: #e11d48;
+  color: var(--ledger-text);
+  background-color: var(--ledger-canvas);
 }
 
 html.dark {
-  color: #fafafa;
-  background-color: #09090b;
+  --ledger-canvas: #0b0e14;
+  --ledger-surface: #161b26;
+  --ledger-border: rgba(255, 255, 255, 0.1);
+  --ledger-text: #f1f5f9;
+  --ledger-muted: #94a3b8;
+  --ledger-accent: #6366f1;
+  --ledger-profit: #10b981;
+  --ledger-loss: #f43f5e;
+  color: var(--ledger-text);
+  background-color: var(--ledger-canvas);
 }
 
 body {

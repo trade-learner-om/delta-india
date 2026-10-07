@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { BookOpen, LayoutDashboard, LogOut, Moon, Settings, Sun, TrendingUp } from "lucide-react";
 import { api } from "../../api";
+import { applyThemeClass, readStoredTheme, writeStoredTheme } from "../../utils/theme/themeStorage";
+import { ledgerMuted, ledgerPanel } from "./deskFormat";
 import HomePage from "./HomePage";
 import JournalPage from "./JournalPage";
 import SettingsPage from "./SettingsPage";
@@ -8,19 +11,27 @@ import TradeDetailModal from "./TradeDetailModal";
 import TradePage from "./TradePage";
 
 const PAGES = [
-  ["home", "Home"],
-  ["trade", "Trade"],
-  ["journal", "Journal"],
-  ["settings", "Settings"],
+  ["home", "Home", LayoutDashboard],
+  ["trade", "Trade", TrendingUp],
+  ["journal", "Journal", BookOpen],
+  ["settings", "Settings", Settings],
 ];
+
+applyThemeClass(readStoredTheme());
 
 export default function DeskShell({ token, me, livePrices, liveStatus, onLogout, onNotify, onSessionRefresh }) {
   const [page, setPage] = useState("home");
+  const [theme, setTheme] = useState(readStoredTheme);
   const [entries, setEntries] = useState([]);
   const [watchlist, setWatchlist] = useState([]);
   const [mt5Accounts, setMt5Accounts] = useState([]);
   const [deltaAccounts, setDeltaAccounts] = useState([]);
   const [openTrade, setOpenTrade] = useState(null);
+
+  useEffect(() => {
+    applyThemeClass(theme);
+    writeStoredTheme(theme);
+  }, [theme]);
 
   const reload = async () => {
     const [journal, list, crypto, forex] = await Promise.all([
@@ -40,30 +51,53 @@ export default function DeskShell({ token, me, livePrices, liveStatus, onLogout,
     reload().catch((err) => onNotify("error", err.message || "Dashboard data did not load."));
   }, [token]);
 
+  const connected = liveStatus === "connected";
+  const name = me?.displayName || me?.email || "Account";
+
   return (
-    <div className="flex h-dvh bg-[#16181d] text-[#e6e2d8]">
-      <aside className="flex w-52 shrink-0 flex-col border-r border-white/10 px-4 py-6">
-        <p className="px-2 text-lg tracking-wide">Ledger</p>
+    <div className="flex h-screen overflow-hidden bg-[var(--ledger-canvas)] text-[var(--ledger-text)]">
+      <aside className="flex w-60 shrink-0 flex-col border-r border-[var(--ledger-border)] bg-[var(--ledger-surface)] px-3 py-5">
+        <p className="px-3 text-lg tracking-wide">Ledger</p>
         <nav className="mt-8 flex flex-col gap-1">
-          {PAGES.map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setPage(id)}
-              className={`rounded-xl px-3 py-2 text-left text-sm ${page === id ? "bg-[#24303a] text-[#8eafc4]" : "text-[#9a958c]"}`}
-            >
-              {label}
-            </button>
-          ))}
+          {PAGES.map(([id, label, Icon]) => {
+            const active = page === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setPage(id)}
+                className={`flex items-center gap-3 rounded-xl px-3 py-2 text-left text-sm ${active ? "bg-[var(--ledger-accent)]/10 text-[var(--ledger-accent)] shadow-[inset_3px_0_0_var(--ledger-accent)]" : ledgerMuted}`}
+              >
+                <Icon size={16} />
+                {label}
+              </button>
+            );
+          })}
         </nav>
-        <div className="mt-auto px-2 text-xs text-[#9a958c]">
-          <p>{me?.displayName || me?.email}</p>
-          <p className="mt-1 capitalize">{liveStatus}</p>
-          <button type="button" className="mt-3 text-[#8eafc4]" onClick={onLogout}>Log out</button>
+        <div className={`mt-auto ${ledgerPanel} p-3`}>
+          <p className="truncate text-sm">{name}</p>
+          <p className={`mt-1 flex items-center gap-2 text-xs capitalize ${ledgerMuted}`}>
+            <span className={`h-2 w-2 rounded-full ${connected ? "bg-[var(--ledger-profit)]" : "bg-[var(--ledger-muted)]"}`} />
+            {liveStatus}
+          </p>
+          <div className="mt-3 flex items-center justify-between">
+            <button
+              type="button"
+              className={`inline-flex items-center gap-1 text-xs ${ledgerMuted}`}
+              onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            >
+              {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+              {theme === "dark" ? "Light" : "Dark"}
+            </button>
+            <button type="button" className="inline-flex items-center gap-1 text-xs text-[var(--ledger-accent)]" onClick={onLogout}>
+              <LogOut size={14} />
+              Log out
+            </button>
+          </div>
         </div>
       </aside>
       <main className="min-w-0 flex-1 overflow-y-auto p-6">
-        <motion.div key={page} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
+        <motion.div key={page} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="space-y-6">
           {page === "home" ? (
             <HomePage
               token={token}
@@ -73,12 +107,12 @@ export default function DeskShell({ token, me, livePrices, liveStatus, onLogout,
               onOpenTrade={setOpenTrade}
               onWatchlistChange={reload}
               onNotify={onNotify}
+              onOpenJournal={() => setPage("journal")}
             />
           ) : null}
           {page === "trade" ? (
             <TradePage
               token={token}
-              me={me}
               deltaAccounts={deltaAccounts}
               mt5Accounts={mt5Accounts}
               onNotify={onNotify}
@@ -92,6 +126,8 @@ export default function DeskShell({ token, me, livePrices, liveStatus, onLogout,
             <SettingsPage
               token={token}
               me={me}
+              theme={theme}
+              onThemeChange={setTheme}
               deltaAccounts={deltaAccounts}
               mt5Accounts={mt5Accounts}
               onReload={() => {

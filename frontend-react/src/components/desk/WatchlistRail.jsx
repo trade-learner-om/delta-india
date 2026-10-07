@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { api } from "../../api";
 import ChoiceSwitch from "./ChoiceSwitch";
+import { formatPrice, ledgerField, ledgerMuted, ledgerPanel, pnlClass } from "./deskFormat";
 
 const STORAGE_KEY = "ledger.watchlist.open";
 
@@ -69,7 +71,7 @@ export default function WatchlistRail({ token, watchlist, livePrices, onChanged,
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex h-full min-h-40 items-center justify-center rounded-2xl border border-white/10 bg-[#1e2128] px-2 py-4 text-xs uppercase tracking-[0.2em] text-[#9a958c] xl:w-11"
+        className={`flex h-full min-h-40 items-center justify-center px-2 py-4 text-xs uppercase tracking-[0.2em] xl:w-11 ${ledgerPanel} ${ledgerMuted}`}
         style={{ writingMode: "vertical-rl" }}
       >
         Watchlist
@@ -82,11 +84,11 @@ export default function WatchlistRail({ token, watchlist, livePrices, onChanged,
       initial={{ opacity: 0.6 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.2 }}
-      className="rounded-2xl border border-white/10 bg-[#1e2128] p-4 xl:w-[280px]"
+      className={`p-4 xl:w-80 ${ledgerPanel}`}
     >
       <div className="flex items-center justify-between">
-        <h2 className="text-sm text-[#9a958c]">Watchlist</h2>
-        <button type="button" className="text-xs text-[#8eafc4]" onClick={() => setOpen(false)}>
+        <h2 className={`text-sm ${ledgerMuted}`}>Watchlist</h2>
+        <button type="button" className="text-xs text-[var(--ledger-accent)]" onClick={() => setOpen(false)}>
           Collapse
         </button>
       </div>
@@ -97,24 +99,24 @@ export default function WatchlistRail({ token, watchlist, livePrices, onChanged,
           options={[["crypto", "Crypto"], ["forex", "Forex"]]}
         />
         <input
-          className="mt-2 w-full rounded-lg border border-white/10 bg-[#16181d] px-3 py-2 text-sm"
+          className={`mt-2 ${ledgerField}`}
           placeholder="Search symbol"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
         {suggestions.length || message ? (
-          <div className="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-white/10 bg-[#16181d] shadow-xl">
-            {message ? <p className="px-3 py-2 text-xs text-[#9a958c]">{message}</p> : null}
+          <div className={`absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-xl shadow-xl ${ledgerPanel}`}>
+            {message ? <p className={`px-3 py-2 text-xs ${ledgerMuted}`}>{message}</p> : null}
             {suggestions.map((item) => (
               <button
                 key={`${item.venue}:${item.symbol}`}
                 type="button"
-                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-white/5"
+                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => addSymbol(item.symbol).catch((err) => onNotify("error", err.message))}
               >
                 <span>{item.symbol}</span>
-                <span className="text-[11px] uppercase tracking-wider text-[#8eafc4]">{item.venue}</span>
+                <span className="text-[11px] uppercase tracking-wider text-[var(--ledger-accent)]">{item.venue}</span>
               </button>
             ))}
           </div>
@@ -122,21 +124,26 @@ export default function WatchlistRail({ token, watchlist, livePrices, onChanged,
       </div>
       {["crypto", "forex"].map((group) => (
         <div key={group} className="mt-4">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-[#8eafc4]">{group}</p>
-          {groups[group].length === 0 ? <p className="mt-2 text-sm text-[#9a958c]">None yet</p> : null}
+          <p className="text-[11px] uppercase tracking-[0.16em] text-[var(--ledger-accent)]">{group}</p>
+          {groups[group].length === 0 ? <p className={`mt-2 text-sm ${ledgerMuted}`}>None yet</p> : null}
           {groups[group].map((item) => {
             const tick = livePrices?.[item.symbol] || {};
             const price = tick.price || tick.mark_price || tick.bid || tick.ask;
+            const change = Number(tick.change24h);
             return (
-              <div key={item.id || item.symbol} className="mt-2 flex items-center justify-between gap-2 text-sm">
+              <div key={item.id || item.symbol} className="group mt-2 flex items-center justify-between gap-2 text-sm">
                 <span>{item.symbol}</span>
-                <span className="text-[#e6e2d8]">{price ?? "—"}</span>
+                <span className="ml-auto text-right">
+                  <span className="block">{formatPrice(price)}</span>
+                  {Number.isFinite(change) ? <span className={`text-[11px] ${pnlClass(change)}`}>{change > 0 ? "▲" : change < 0 ? "▼" : "•"} {Math.abs(change).toFixed(2)}%</span> : null}
+                </span>
                 <button
                   type="button"
-                  className="text-xs text-[#9a958c]"
+                  aria-label={`Remove ${item.symbol}`}
+                  className={`opacity-0 transition group-hover:opacity-100 ${ledgerMuted}`}
                   onClick={() => removeSymbol(item).catch((err) => onNotify("error", err.message))}
                 >
-                  Remove
+                  <Trash2 size={14} />
                 </button>
               </div>
             );
