@@ -1,19 +1,16 @@
 import { motion } from "framer-motion";
 import AreaChart from "./AreaChart";
+import WatchlistRail from "./WatchlistRail";
 import { cumulativeSeries, formatIst, money, monthGroups, pnlClass, sumVenue } from "./deskFormat";
 
-export default function HomePage({ entries, watchlist, livePrices, onOpenTrade }) {
+export default function HomePage({ token, entries, watchlist, livePrices, onOpenTrade, onWatchlistChange, onNotify }) {
   const recent = entries.slice(0, 5);
   const crypto = cumulativeSeries(entries, "crypto");
   const forex = cumulativeSeries(entries, "forex");
   const months = monthGroups(entries);
-  const groups = {
-    crypto: (watchlist || []).filter((item) => item.venue === "crypto"),
-    forex: (watchlist || []).filter((item) => item.venue === "forex"),
-  };
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto]">
       <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-3">
           {[
@@ -92,25 +89,13 @@ export default function HomePage({ entries, watchlist, livePrices, onOpenTrade }
           </div>
         </section>
       </div>
-      <aside className="rounded-2xl border border-white/10 bg-[#1e2128] p-4">
-        <h2 className="text-sm text-[#9a958c]">Watchlist</h2>
-        {["crypto", "forex"].map((venue) => (
-          <div key={venue} className="mt-4">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-[#8eafc4]">{venue}</p>
-            {(groups[venue] || []).length === 0 ? <p className="mt-2 text-sm text-[#9a958c]">None yet</p> : null}
-            {(groups[venue] || []).map((item) => {
-              const tick = livePrices?.[item.symbol] || {};
-              const price = tick.price || tick.mark_price || tick.bid || tick.ask;
-              return (
-                <div key={item.id || item.symbol} className="mt-2 flex items-center justify-between text-sm">
-                  <span>{item.symbol}</span>
-                  <span className="text-[#e6e2d8]">{price ?? "—"}</span>
-                </div>
-              );
-            })}
-          </div>
-        ))}
-      </aside>
+      <WatchlistRail
+        token={token}
+        watchlist={watchlist}
+        livePrices={livePrices}
+        onChanged={onWatchlistChange}
+        onNotify={onNotify}
+      />
     </div>
   );
 }

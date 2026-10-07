@@ -1,8 +1,9 @@
 export function money(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "—";
-  const sign = number > 0 ? "+" : "";
-  return `${sign}${number.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+  const sign = number > 0 ? "+" : number < 0 ? "-" : "";
+  const amount = Math.abs(number).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${sign}$${amount}`;
 }
 
 export function pnlClass(value) {

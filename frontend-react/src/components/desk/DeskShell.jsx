@@ -65,9 +65,26 @@ export default function DeskShell({ token, me, livePrices, liveStatus, onLogout,
       <main className="min-w-0 flex-1 overflow-y-auto p-6">
         <motion.div key={page} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
           {page === "home" ? (
-            <HomePage entries={entries} watchlist={watchlist} livePrices={livePrices} onOpenTrade={setOpenTrade} />
+            <HomePage
+              token={token}
+              entries={entries}
+              watchlist={watchlist}
+              livePrices={livePrices}
+              onOpenTrade={setOpenTrade}
+              onWatchlistChange={reload}
+              onNotify={onNotify}
+            />
           ) : null}
-          {page === "trade" ? <TradePage token={token} onNotify={onNotify} /> : null}
+          {page === "trade" ? (
+            <TradePage
+              token={token}
+              me={me}
+              deltaAccounts={deltaAccounts}
+              mt5Accounts={mt5Accounts}
+              onNotify={onNotify}
+              onReload={reload}
+            />
+          ) : null}
           {page === "journal" ? (
             <JournalPage token={token} onNotify={onNotify} onChanged={reload} />
           ) : null}

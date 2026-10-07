@@ -14,6 +14,16 @@ class WatchlistRequest(BaseModel):
     symbol: str
 
 
+@router.get("/suggest")
+async def suggest_watchlist(
+    venue: str,
+    q: str = "",
+    user=Depends(get_user),
+    watchlist: WatchlistService = Depends(get_watchlist_service),
+):
+    return await watchlist.suggest(user, venue, q)
+
+
 @router.get("")
 async def list_watchlist(user=Depends(get_user), watchlist: WatchlistService = Depends(get_watchlist_service)):
     items = await watchlist.list_items(user)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,7 @@ class JournalService:
         self._delta = delta
         self._delta_accounts = delta_accounts
         self._mt5_accounts = mt5_accounts
+        self._contract_values: dict[str, tuple[float, float]] = {}
 
     async def ensure_indexes(self) -> None:
         await self._entries.create_index([("userId", 1), ("sourceTradeId", 1)], unique=True)
@@ -45,7 +47,9 @@ class JournalService:
 
     async def list_saved(self, user: dict[str, Any]) -> list[dict[str, Any]]:
         cursor = self._entries.find({"userId": user["id"]}).sort("exitTimeIst", -1)
-        return [self._public(doc) async for doc in cursor]
+        docs = [doc async for doc in cursor]
+        await self._repair_crypto_pnl(docs)
+        return [self._public(doc) for doc in docs]
 
     async def recent(self, user: dict[str, Any]) -> list[dict[str, Any]]:
         saved = {
@@ -147,7 +151,13 @@ class JournalService:
             except Exception:
                 log.exception("Delta fills unavailable for account %s", account.get("_id"))
                 continue
-            rows.extend(self._pair_delta_fills(account, fills))
+            symbols = {
+                str(fill.get("product_symbol") or fill.get("symbol") or "").upper()
+                for fill in fills
+                if fill.get("product_symbol") or fill.get("symbol")
+            }
+            contract_values = {symbol: await self._contract_value(symbol) for symbol in symbols}
+            rows.extend(self._pair_delta_fills(account, fills, contract_values))
         return rows
 
     async def _mt5_recent(self, user: dict[str, Any]) -> list[dict[str, Any]]:
@@ -185,7 +195,12 @@ class JournalService:
                 )
         return rows
 
-    def _pair_delta_fills(self, account: dict[str, Any], fills: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _pair_delta_fills(
+        self,
+        account: dict[str, Any],
+        fills: list[dict[str, Any]],
+        contract_values: dict[str, float | None],
+    ) -> list[dict[str, Any]]:
         ordered = sorted(fills, key=lambda item: str(item.get("created_at") or item.get("timestamp") or ""))
         open_by_symbol: dict[str, list[dict[str, Any]]] = {}
         closed: list[dict[str, Any]] = []
@@ -197,33 +212,41 @@ class JournalService:
             book = open_by_symbol.setdefault(symbol, [])
             if book and book[0]["side"] != side:
                 opened = book.pop(0)
-                closed.append(self._delta_round_trip(account, opened, fill))
+                closed.append(self._delta_round_trip(account, opened, fill, contract_values.get(symbol)))
             else:
                 book.append(fill)
         return closed
 
-    def _delta_round_trip(self, account: dict[str, Any], opened: dict[str, Any], closed: dict[str, Any]) -> dict[str, Any]:
+    def _delta_round_trip(
+        self,
+        account: dict[str, Any],
+        opened: dict[str, Any],
+        closed: dict[str, Any],
+        contract_value: float | None,
+    ) -> dict[str, Any]:
         entry = float(opened.get("price") or opened.get("fill_price") or 0)
         exit_price = float(closed.get("price") or closed.get("fill_price") or 0)
         quantity = abs(float(closed.get("size") or opened.get("size") or 0))
         side = "BUY" if str(opened.get("side") or "").lower() == "buy" else "SELL"
         commission = float(opened.get("commission") or 0) + float(closed.get("commission") or 0)
-        gross = (exit_price - entry) * quantity if side == "BUY" else (entry - exit_price) * quantity
+        symbol = str(closed.get("product_symbol") or opened.get("product_symbol") or "").upper()
+        unit = contract_value if contract_value and contract_value > 0 else _fill_contract_value(opened, closed)
+        gross, net = crypto_usd_pnl(side, entry, exit_price, quantity, unit, commission)
         source_id = str(closed.get("id") or closed.get("fill_id") or f"{opened.get('id')}:{closed.get('id')}")
         trade = {
             "sourceTradeId": f"delta:{source_id}",
-            "symbol": str(closed.get("product_symbol") or opened.get("product_symbol") or "").upper(),
+            "symbol": symbol,
             "side": side,
             "entry": entry,
             "exit": exit_price,
             "quantity": quantity,
             "stopLoss": None,
             "target": None,
-            "grossPnl": round(gross, 4),
+            "grossPnl": gross,
             "commission": round(commission, 4),
             "swap": 0.0,
             "fees": round(commission, 4),
-            "netPnl": round(gross - abs(commission), 4),
+            "netPnl": net,
             "raw": {"open": opened, "close": closed},
         }
         return self._trade_row(
@@ -294,6 +317,53 @@ class JournalService:
             "reason": "",
         }
 
+    async def _contract_value(self, symbol: str) -> float | None:
+        cached = self._contract_values.get(symbol)
+        if cached and time.monotonic() - cached[1] < 600:
+            return cached[0]
+        try:
+            product = await self._delta.fetch_product(symbol)
+        except Exception:
+            log.info("Delta contract value unavailable for %s", symbol)
+            return None
+        value = float(product.contract_value or 0)
+        if value <= 0:
+            return None
+        self._contract_values[symbol] = (value, time.monotonic())
+        return value
+
+    async def _repair_crypto_pnl(self, docs: list[dict[str, Any]]) -> None:
+        symbols = {str(doc.get("symbol") or "").upper() for doc in docs if doc.get("venue") == "crypto" and doc.get("symbol")}
+        units: dict[str, float] = {}
+        for symbol in symbols:
+            value = await self._contract_value(symbol)
+            if value:
+                units[symbol] = value
+        for doc in docs:
+            if doc.get("venue") != "crypto":
+                continue
+            symbol = str(doc.get("symbol") or "").upper()
+            unit = units.get(symbol)
+            if not unit or doc.get("entry") is None or doc.get("exit") is None:
+                continue
+            gross, net = crypto_usd_pnl(
+                str(doc.get("side") or ""),
+                float(doc.get("entry") or 0),
+                float(doc.get("exit") or 0),
+                float(doc.get("quantity") or 0),
+                unit,
+                float(doc.get("commission") or 0),
+            )
+            if doc.get("grossPnl") == gross and doc.get("netPnl") == net and doc.get("currency") == "USD":
+                continue
+            doc["grossPnl"] = gross
+            doc["netPnl"] = net
+            doc["currency"] = "USD"
+            await self._entries.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"grossPnl": gross, "netPnl": net, "currency": "USD"}},
+            )
+
     async def _owned(self, user: dict[str, Any], entry_id: str) -> dict[str, Any]:
         try:
             oid = ObjectId(entry_id)
@@ -355,6 +425,34 @@ class JournalService:
             "locked": locked,
             "raw": doc.get("raw"),
         }
+
+
+def crypto_usd_pnl(
+    side: str,
+    entry: float,
+    exit_price: float,
+    quantity: float,
+    contract_value: float | None,
+    commission: float,
+) -> tuple[float, float]:
+    """Dollar P/L for a Delta perpetual. Size is contracts, so price move is scaled by contract value."""
+    unit = float(contract_value) if contract_value and contract_value > 0 else 1.0
+    move = (exit_price - entry) if str(side or "").upper() == "BUY" else (entry - exit_price)
+    gross = move * abs(float(quantity or 0)) * unit
+    net = gross - abs(float(commission or 0))
+    return round(gross, 4), round(net, 4)
+
+
+def _fill_contract_value(opened: dict[str, Any], closed: dict[str, Any]) -> float | None:
+    for fill in (closed, opened):
+        raw = fill.get("contract_value")
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            return value
+    return None
 
 
 def _optional_float(value: Any) -> float | None:

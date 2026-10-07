@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any
 
@@ -66,6 +67,8 @@ class Mt5AccountService:
         terminal_path = str(terminal_path or "").strip().strip('"')
         if not login or not password or not server or not terminal_path:
             raise http_error(400, "MT5 account number, password, server, and terminal path are required.")
+        existing = await self._accounts.find_one({"userId": user["id"], "login": login})
+        await self._reject_shared_terminal(user, terminal_path, exclude_id=existing.get("_id") if existing else None)
         credentials = {"login": login, "password": password, "server": server, "path": terminal_path}
         try:
             snapshot = self._client.account_snapshot(credentials)
@@ -133,6 +136,30 @@ class Mt5AccountService:
         )
         account["riskAmount"] = float(risk_amount)
         return self._view(account, selected=str(user.get("selectedAccountId") or "") == account_id)
+
+    def search_symbols(self, account: dict[str, Any], query: str, limit: int = 40) -> list[str]:
+        return self._client.search_symbols(self.credentials_for(account), query, limit)
+
+    async def connected_account(self, user: dict[str, Any]) -> dict[str, Any] | None:
+        selected = await self.selected_account(user)
+        if selected:
+            return selected
+        return await self._accounts.find_one({"userId": user["id"]})
+
+    async def _reject_shared_terminal(self, user: dict[str, Any], terminal_path: str, exclude_id: Any = None) -> None:
+        cursor = self._accounts.find({"userId": user["id"]})
+        async for doc in cursor:
+            if exclude_id is not None and doc.get("_id") == exclude_id:
+                continue
+            try:
+                saved = self.credentials_for(doc).get("path") or ""
+            except Exception:
+                continue
+            if saved and _same_terminal_path(saved, terminal_path):
+                raise http_error(
+                    400,
+                    "That terminal64.exe is already saved on another account. Use a separate MT5 folder.",
+                )
 
     async def selected_account(self, user: dict[str, Any]) -> dict[str, Any] | None:
         if str(user.get("selectedVenue") or "") != "forex":
@@ -240,3 +267,9 @@ class Mt5AccountService:
             "currencyCode": doc.get("currency") or "USD",
             "brokerUtcOffsetSeconds": int(doc.get("brokerUtcOffsetSeconds") or 0),
         }
+
+
+def _same_terminal_path(left: str, right: str) -> bool:
+    return os.path.normcase(os.path.normpath(left.strip().strip('"'))) == os.path.normcase(
+        os.path.normpath(right.strip().strip('"'))
+    )

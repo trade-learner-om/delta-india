@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
     snapshot_service = SnapshotService(account_service, market, delta)
     mt5_client = Mt5Client()
     mt5_account_service = Mt5AccountService(db, mt5_client)
-    watchlist_service = WatchlistService(db, market)
+    watchlist_service = WatchlistService(db, market, delta, mt5_account_service)
     journal_service = JournalService(db, delta, account_service, mt5_account_service)
     mt5_feed = Mt5PriceFeed(db, market, mt5_account_service, mt5_client)
 
@@ -124,6 +124,7 @@ async def request_id_middleware(request: Request, call_next):
 app.include_router(auth.router)
 app.include_router(accounts.router)
 app.include_router(mt5_accounts.router)
+app.include_router(mt5_accounts.terminals_router)
 app.include_router(orders.router)
 app.include_router(meta.router)
 app.include_router(positions.router)

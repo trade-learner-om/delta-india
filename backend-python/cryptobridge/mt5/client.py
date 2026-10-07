@@ -223,6 +223,25 @@ class Mt5Client:
 
         return self._call(credentials, operation)
 
+    def search_symbols(self, credentials: dict[str, str], query: str, limit: int = 12) -> list[str]:
+        needle = str(query or "").strip().upper()
+
+        def operation(mt5):
+            prefix: list[str] = []
+            contains: list[str] = []
+            for item in mt5.symbols_get() or []:
+                name = str(getattr(item, "name", "") or "")
+                upper = name.upper()
+                if not name:
+                    continue
+                if upper.startswith(needle):
+                    prefix.append(name)
+                elif needle in upper:
+                    contains.append(name)
+            return (prefix + contains)[:limit]
+
+        return self._call(credentials, operation)
+
     @staticmethod
     def _offset_seconds(mt5) -> int:
         utc_now = int(datetime.now(timezone.utc).timestamp())

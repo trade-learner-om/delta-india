@@ -406,6 +406,33 @@ class DeltaRestClient:
                 break
         return intervals
 
+    async def list_perpetual_symbols(self) -> list[dict[str, str]]:
+        """Live perpetual symbols. Cached by callers so keystrokes do not page Delta."""
+        rows: list[dict[str, str]] = []
+        seen: set[str] = set()
+        after: str | None = None
+        while True:
+            params: dict[str, str] = {
+                "states": "live",
+                "page_size": "100",
+                "contract_types": "perpetual_futures",
+            }
+            if after:
+                params["after"] = after
+            node = await self._public_get("/v2/products", params)
+            for product in node.get("result", []):
+                symbol = normalize_symbol(str(product.get("symbol") or ""))
+                if not symbol or symbol in seen:
+                    continue
+                seen.add(symbol)
+                description = str(product.get("description") or symbol)
+                rows.append({"symbol": symbol, "description": description})
+            after = (node.get("meta") or {}).get("after")
+            if not after:
+                break
+        rows.sort(key=lambda item: item["symbol"])
+        return rows
+
     async def fetch_tickers_batch(self, symbols: list[str]) -> list[InstrumentSummary]:
         normalized = [normalize_symbol(symbol) for symbol in symbols if symbol]
         if not normalized:
