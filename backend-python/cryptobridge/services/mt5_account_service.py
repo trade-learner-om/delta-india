@@ -17,6 +17,7 @@ from cryptobridge.mt5.terminal_detection import find_running_terminal_paths
 from cryptobridge.utils import crypto as secret_crypto
 from cryptobridge.utils.account_names import broker_display_name
 from cryptobridge.utils.forex_risk import calc_quantity, calc_rr
+from cryptobridge.utils.order_prices import validate_order_prices
 
 log = logging.getLogger(__name__)
 DEFAULT_RISK = 100.0
@@ -205,8 +206,7 @@ class Mt5AccountService:
         stop = float(body.get("stopLoss") or body.get("stop_loss") or 0)
         target = body.get("target")
         target_value = float(target) if target not in (None, "") else None
-        if entry <= 0 or stop <= 0:
-            raise http_error(400, "Entry and stop loss are required.")
+        validate_order_prices(body.get("side"), entry, stop, target_value)
         try:
             spec = self._client.symbol_spec(self.credentials_for(account), symbol)
         except LocalMt5Error as exc:
@@ -240,7 +240,7 @@ class Mt5AccountService:
         payload = {
             "symbol": preview["symbol"],
             "side": body.get("side"),
-            "order_type": body.get("orderType") or body.get("order_type") or "MARKET",
+            "order_type": body.get("orderType") or body.get("order_type") or "LIMIT",
             "entry": body.get("entry"),
             "stop_loss": body.get("stopLoss") or body.get("stop_loss"),
             "target": body.get("target"),

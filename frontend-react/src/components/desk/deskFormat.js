@@ -77,6 +77,27 @@ export function targetPriceFromR(side, entry, stop, multiple) {
   return roundToStep(raw);
 }
 
+export function orderPriceMessage(side, entry, stop, target) {
+  const sell = String(side).toUpperCase() === "SELL";
+  const entryValue = Number(entry);
+  const stopValue = Number(stop);
+  const hasEntry = entry !== "" && entry != null;
+  const hasStop = stop !== "" && stop != null;
+  if (hasEntry && !(entryValue > 0)) return "Entry must be greater than 0.";
+  if (hasStop && !(stopValue > 0)) return "Stop loss must be greater than 0.";
+  if (entryValue > 0 && stopValue > 0) {
+    if (sell && stopValue <= entryValue) return "Stop loss must be above entry for a sell.";
+    if (!sell && stopValue >= entryValue) return "Stop loss must be below entry for a buy.";
+  }
+  if (target == null || target === "") return "";
+  const targetValue = Number(target);
+  if (!(targetValue > 0)) return "Target must be greater than 0.";
+  if (!(entryValue > 0)) return "";
+  if (sell && targetValue >= entryValue) return "Target must be below entry for a sell.";
+  if (!sell && targetValue <= entryValue) return "Target must be above entry for a buy.";
+  return "";
+}
+
 export function rewardRisk(side, entry, stop, target) {
   const entryValue = Number(entry);
   const stopValue = Number(stop);

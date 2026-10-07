@@ -2,8 +2,8 @@ import { ledgerMuted } from "./deskFormat";
 
 function activeClass(tone, id, selected) {
   if (!selected) return ledgerMuted;
-  if (tone === "side" && id === "BUY") return "bg-[var(--ledger-profit)] text-white";
-  if (tone === "side" && id === "SELL") return "bg-[var(--ledger-loss)] text-white";
+  if (tone === "side" && id === "BUY") return "bg-[var(--ledger-profit)] text-white shadow-lg shadow-emerald-500/20";
+  if (tone === "side" && id === "SELL") return "bg-[var(--ledger-loss)] text-white shadow-lg shadow-rose-500/20";
   return "bg-[var(--ledger-accent)] text-white";
 }
 

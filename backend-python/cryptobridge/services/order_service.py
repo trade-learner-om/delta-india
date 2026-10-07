@@ -13,6 +13,7 @@ from cryptobridge.delta.rest_client import (
 )
 from cryptobridge.exceptions import http_error
 from cryptobridge.utils import crypto as secret_crypto
+from cryptobridge.utils.order_prices import validate_order_prices
 from cryptobridge.utils.risk_sizing import RiskSizingError, compute_position_size
 
 
@@ -41,8 +42,7 @@ class OrderService:
         entry = request.get("entry")
         stop_loss = request.get("stop_loss") or request.get("stopLoss")
         target = request.get("target")
-        if entry is None or stop_loss is None:
-            raise http_error(400, "Entry and stop loss are required.")
+        validate_order_prices(request.get("side"), entry, stop_loss, target)
         risk_amount = float(account.get("riskAmount") or 0)
         try:
             size = compute_position_size(risk_amount, entry, stop_loss, product.contract_value)
@@ -66,6 +66,7 @@ class OrderService:
         product = await self._delta.fetch_product(request["symbol"])
         entry = request.get("entry")
         stop_loss = request.get("stop_loss") or request.get("stopLoss")
+        validate_order_prices(request.get("side"), entry, stop_loss, request.get("target"))
         explicit_size = request.get("size")
         if explicit_size is not None:
             size = float(explicit_size)

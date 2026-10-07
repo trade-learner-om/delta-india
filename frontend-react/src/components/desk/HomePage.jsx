@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen } from "lucide-react";
+import { Activity, BookOpen, TrendingDown, TrendingUp } from "lucide-react";
 import { motion } from "framer-motion";
 import { api } from "../../api";
+import CoinIcon from "../CoinIcon";
 import { decoratePositionRow } from "../positions/positionsUtils";
+import PriceFlashTicker from "./PriceFlashTicker";
 import AreaChart from "./AreaChart";
 import WatchlistRail from "./WatchlistRail";
 import {
@@ -90,6 +92,7 @@ export default function HomePage({ token, entries, watchlist, livePrices, positi
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {cards.map(([label, value, series]) => {
             const change = seriesChangePercent(series);
+            const TrendIcon = Number(value) > 0 ? TrendingUp : Number(value) < 0 ? TrendingDown : Activity;
             return (
               <motion.section
                 key={label}
@@ -98,7 +101,10 @@ export default function HomePage({ token, entries, watchlist, livePrices, positi
                 className={`relative overflow-hidden px-4 py-3 ${ledgerPanel}`}
               >
                 <div className="pointer-events-none relative z-10">
-                  <p className={`text-xs uppercase tracking-[0.16em] ${ledgerMuted}`}>{label}</p>
+                  <p className={`flex items-center gap-1.5 text-xs uppercase tracking-[0.16em] ${ledgerMuted}`}>
+                    <TrendIcon size={14} className={pnlClass(value)} />
+                    {label}
+                  </p>
                   <div className="mt-2 flex items-end justify-between gap-2">
                     <p className={`text-2xl font-semibold ${pnlClass(value)}`}>{money(value)}</p>
                     {change != null ? <span className={pnlPill(change)}>{formatPercent(change)}</span> : null}
@@ -113,17 +119,26 @@ export default function HomePage({ token, entries, watchlist, livePrices, positi
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <section className={`p-4 ${ledgerPanel}`}>
-            <h2 className={`text-sm ${ledgerMuted}`}>Crypto P/L</h2>
+            <h2 className={`flex items-center gap-1.5 text-sm ${ledgerMuted}`}>
+              {(crypto.at(-1) ?? 0) >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+              Crypto P/L
+            </h2>
             <AreaChart values={crypto} positive={(crypto.at(-1) ?? 0) >= 0} />
           </section>
           <section className={`p-4 ${ledgerPanel}`}>
-            <h2 className={`text-sm ${ledgerMuted}`}>Forex P/L</h2>
+            <h2 className={`flex items-center gap-1.5 text-sm ${ledgerMuted}`}>
+              {(forex.at(-1) ?? 0) >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+              Forex P/L
+            </h2>
             <AreaChart values={forex} positive={(forex.at(-1) ?? 0) >= 0} />
           </section>
         </div>
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
           <section className={`p-4 ${ledgerPanel}`}>
-            <h2 className={`text-sm ${ledgerMuted}`}>Equity</h2>
+            <h2 className={`flex items-center gap-1.5 text-sm ${ledgerMuted}`}>
+              <Activity size={14} />
+              Equity
+            </h2>
             <AreaChart values={combined} positive={(combined.at(-1) ?? 0) >= 0} className="h-56" />
           </section>
           <section className={`p-4 ${ledgerPanel}`}>
@@ -180,7 +195,12 @@ export default function HomePage({ token, entries, watchlist, livePrices, positi
                     className="cursor-pointer border-t border-[var(--ledger-border)]"
                     onClick={() => onOpenTrade(trade)}
                   >
-                    <td className="py-2">{trade.symbol}</td>
+                    <td className="py-2">
+                      <span className="inline-flex items-center gap-2">
+                        <CoinIcon coin={trade.symbol} size={18} />
+                        {trade.symbol}
+                      </span>
+                    </td>
                     <td className="py-2">{trade.accountName}</td>
                     <td className={`py-2 capitalize ${ledgerMuted}`}>{trade.venue}</td>
                     <td className={`py-2 ${ledgerMuted}`}>{formatIst(trade.exitTimeIst)}</td>
@@ -228,8 +248,14 @@ function RunningPositions({ rows }) {
               <td className="py-2">{sideLabel(row.side)}</td>
               <td className="py-2 text-right">{sizeLabel(row.size)}</td>
               <td className="py-2 text-right">{formatPrice(row.entryPrice)}</td>
-              <td className="py-2 text-right">{formatPrice(row.markPrice)}</td>
-              <td className="py-2 text-right"><span className={pnlPill(row.unrealizedPnlUsd)}>{money(row.unrealizedPnlUsd)}</span></td>
+              <td className="py-2 text-right">
+                <PriceFlashTicker value={row.markPrice}>{formatPrice(row.markPrice)}</PriceFlashTicker>
+              </td>
+              <td className="py-2 text-right">
+                <PriceFlashTicker value={row.unrealizedPnlUsd}>
+                  <span className={pnlPill(row.unrealizedPnlUsd)}>{money(row.unrealizedPnlUsd)}</span>
+                </PriceFlashTicker>
+              </td>
             </tr>
           ))}
         </tbody>

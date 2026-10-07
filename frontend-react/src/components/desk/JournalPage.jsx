@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { ArrowDownRight, ArrowUpRight, BarChart3, DollarSign, Layers, Percent } from "lucide-react";
 import { api, apiUpload } from "../../api";
 import TradeDetailModal from "./TradeDetailModal";
 import {
@@ -15,6 +16,36 @@ import {
 
 const PAGE_SIZE = 20;
 const RECENT_PAGE_SIZE = 10;
+
+function SidePill({ side }) {
+  const sell = ["SELL", "SHORT"].includes(String(side || "").toUpperCase());
+  const tone = sell
+    ? "bg-rose-500/10 text-[var(--ledger-loss)]"
+    : "bg-emerald-500/10 text-[var(--ledger-profit)]";
+  const Icon = sell ? ArrowDownRight : ArrowUpRight;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${tone}`}>
+      <Icon size={12} />
+      {sell ? "Sell" : "Buy"}
+    </span>
+  );
+}
+
+function ReturnPill({ value }) {
+  const number = Number(value);
+  const tone = !Number.isFinite(number) || number === 0
+    ? `bg-slate-500/10 ${ledgerMuted}`
+    : number > 0
+      ? "bg-emerald-500/10 text-[var(--ledger-profit)]"
+      : "bg-rose-500/10 text-[var(--ledger-loss)]";
+  const Icon = number < 0 ? ArrowDownRight : ArrowUpRight;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${tone}`}>
+      {Number.isFinite(number) ? <Icon size={12} /> : null}
+      {formatRealizedR(value)}
+    </span>
+  );
+}
 
 function isoDay(value) {
   const year = value.getFullYear();
@@ -161,19 +192,22 @@ export default function JournalPage({ token, deltaAccounts = [], mt5Accounts = [
   };
 
   const cards = [
-    ["Win rate", stats.winRate == null ? "—" : `${stats.winRate.toFixed(1)}%`],
-    ["Total P/L", money(stats.total)],
-    ["Profit factor", stats.profitFactor == null ? "—" : stats.profitFactor.toFixed(2)],
-    ["Total trades", String(stats.trades)],
+    ["Win rate", stats.winRate == null ? "—" : `${stats.winRate.toFixed(1)}%`, Percent],
+    ["Total P/L", money(stats.total), DollarSign],
+    ["Profit factor", stats.profitFactor == null ? "—" : stats.profitFactor.toFixed(2), BarChart3],
+    ["Total trades", String(stats.trades), Layers],
   ];
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {cards.map(([label, value]) => (
-          <section key={label} className={`px-4 py-3 ${ledgerPanel}`}>
-            <p className={`text-xs uppercase tracking-[0.14em] ${ledgerMuted}`}>{label}</p>
-            <p className="mt-2 text-2xl font-semibold">{value}</p>
+        {cards.map(([label, value, Icon]) => (
+          <section key={label} className={`px-4 py-3 transition-all hover:border-[var(--ledger-accent)]/40 ${ledgerPanel}`}>
+            <p className={`flex items-center gap-1.5 text-xs uppercase tracking-[0.14em] ${ledgerMuted}`}>
+              <Icon size={14} />
+              {label}
+            </p>
+            <p className="mt-2 text-3xl font-bold">{value}</p>
           </section>
         ))}
       </div>
@@ -277,9 +311,9 @@ export default function JournalPage({ token, deltaAccounts = [], mt5Accounts = [
                 <tr key={trade.id} className="border-t border-[var(--ledger-border)]">
                   <td className="py-2">{formatIst(trade.exitTimeIst)}</td>
                   <td className="py-2">{trade.symbol}</td>
-                  <td className="py-2">{trade.side}</td>
+                  <td className="py-2"><SidePill side={trade.side} /></td>
                   <td className="py-2"><span className={pnlPill(trade.netPnl)}>{money(trade.netPnl)}</span></td>
-                  <td className="py-2">{formatRealizedR(trade.rr)}</td>
+                  <td className="py-2"><ReturnPill value={trade.rr} /></td>
                   <td className="py-2">
                     <button type="button" className="text-xs text-[var(--ledger-accent)]" onClick={() => setOpen(trade)}>Open</button>
                     <label className={`ml-3 text-xs text-[var(--ledger-accent)] ${trade.locked ? "opacity-40" : "cursor-pointer"}`}>

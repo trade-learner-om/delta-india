@@ -1,10 +1,25 @@
 import { useEffect, useRef, useState } from "react";
+import { ShieldAlert, SlidersHorizontal } from "lucide-react";
 import { api } from "../../api";
 import { livePriceFromTick, lookupLiveTick } from "../../utils/pricePrecision";
 import ChoiceSwitch from "./ChoiceSwitch";
-import { formatPrice, ledgerField, ledgerMuted, ledgerPanel, money, rewardRisk, roundToStep, targetPriceFromR } from "./deskFormat";
+import PriceFlashTicker from "./PriceFlashTicker";
+import { formatPrice, ledgerField, ledgerMuted, ledgerPanel, money, orderPriceMessage, rewardRisk, roundToStep, targetPriceFromR } from "./deskFormat";
 
-const EMPTY = { venue: "crypto", symbol: "", side: "BUY", orderType: "MARKET", entry: "", stopLoss: "", target: "" };
+const EMPTY = { venue: "crypto", symbol: "", side: "BUY", orderType: "LIMIT", entry: "", stopLoss: "", target: "" };
+
+function RewardRiskBar({ ratio }) {
+  const reward = Number(ratio);
+  if (!Number.isFinite(reward) || reward <= 0) return null;
+  const capped = Math.min(reward, 5);
+  const riskWidth = (1 / (1 + capped)) * 100;
+  return (
+    <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-[var(--ledger-canvas)]">
+      <div className="h-full bg-[var(--ledger-loss)]" style={{ width: `${riskWidth}%` }} />
+      <div className="h-full bg-[var(--ledger-profit)]" style={{ width: `${100 - riskWidth}%` }} />
+    </div>
+  );
+}
 
 function limitR(value) {
   const match = String(value).match(/^\d*\.?\d{0,2}/);
@@ -37,6 +52,10 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
   const liveRr = targetMode === "r"
     ? (Number(targetR) > 0 ? Number(targetR) : null)
     : rewardRisk(form.side, form.entry, form.stopLoss, orderTarget);
+  const checkedTarget = targetMode === "r"
+    ? (targetR === "" || targetR == null ? null : (orderTarget ?? targetR))
+    : (form.target === "" ? null : (orderTarget ?? form.target));
+  const priceError = orderPriceMessage(form.side, form.entry, form.stopLoss, checkedTarget);
   const stopDistance = Math.abs(Number(form.entry) - Number(form.stopLoss));
   const livePrice = livePriceFromTick(lookupLiveTick(livePrices, form.symbol));
 
@@ -160,6 +179,11 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
   };
 
   const runPreview = async ({ quiet = false } = {}) => {
+    if (priceError) {
+      setPreview(null);
+      if (!quiet) onNotify("error", priceError);
+      return;
+    }
     const seq = previewSeq.current + 1;
     previewSeq.current = seq;
     if (!quiet) setPending(true);
@@ -184,7 +208,7 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
     const entry = Number(form.entry);
     const stop = Number(form.stopLoss);
     const symbol = form.symbol.trim();
-    if (symbol.length < 2 || !(entry > 0) || !(stop > 0) || entry === stop || !(Number(risk) > 0)) {
+    if (priceError || symbol.length < 2 || !(entry > 0) || !(stop > 0) || entry === stop || !(Number(risk) > 0)) {
       return undefined;
     }
     const handle = window.setTimeout(() => {
@@ -194,9 +218,13 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
       previewSeq.current += 1;
       window.clearTimeout(handle);
     };
-  }, [form.symbol, form.entry, form.stopLoss, form.side, form.venue, form.target, targetMode, targetR, risk, account?.id]);
+  }, [form.symbol, form.entry, form.stopLoss, form.side, form.venue, form.target, targetMode, targetR, risk, account?.id, priceError]);
 
   const place = async () => {
+    if (priceError) {
+      onNotify("error", priceError);
+      return;
+    }
     setPending(true);
     try {
       await ensureSelected();
@@ -242,7 +270,10 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
             options={[["crypto", "Crypto"], ["forex", "Forex"]]}
           />
           <label className="text-sm">
-            Risk amount (USD)
+            <span className="inline-flex items-center gap-1.5">
+              <ShieldAlert size={14} />
+              Risk amount (USD)
+            </span>
             {account ? (
               <input
                 className={`mt-1 ${ledgerField}`}
@@ -266,7 +297,11 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
                 if (suggestions.length) setSuggestOpen(true);
               }}
             />
-            {livePrice != null ? <span className={`mt-1 block text-xs ${ledgerMuted}`}>{formatPrice(livePrice)}</span> : null}
+            {livePrice != null ? (
+              <PriceFlashTicker value={livePrice} className={`mt-1 text-xs ${ledgerMuted}`}>
+                {formatPrice(livePrice)}
+              </PriceFlashTicker>
+            ) : null}
             {suggestOpen && (suggestions.length || suggestMessage) ? (
               <div className={`absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-xl shadow-xl ${ledgerPanel}`}>
                 {suggestMessage ? <p className={`px-3 py-2 text-xs ${ledgerMuted}`}>{suggestMessage}</p> : null}
@@ -293,12 +328,17 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
             onChange={(side) => setForm((current) => ({ ...current, side }))}
             options={[["BUY", "Buy"], ["SELL", "Sell"]]}
           />
+          <div>
+            <p className="mb-1 inline-flex items-center gap-1.5 text-sm">
+              <SlidersHorizontal size={14} />
+              Order
+            </p>
           <ChoiceSwitch
-            label="Order"
             value={form.orderType}
             onChange={(orderType) => setForm((current) => ({ ...current, orderType }))}
-            options={[["MARKET", "Market"], ["LIMIT", "Limit"], ["SL", "Stop"]]}
+            options={[["LIMIT", "Limit"], ["MARKET", "Market"], ["SL", "Stop"]]}
           />
+          </div>
           <div className="grid grid-cols-3 gap-3">
             {["entry", "stopLoss"].map((key) => (
               <label key={key} className="text-sm capitalize">
@@ -334,6 +374,7 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
               )}
             </div>
           </div>
+          {priceError ? <p className="text-sm text-[var(--ledger-loss)]">{priceError}</p> : null}
         </div>
         <div className={`mt-4 p-3 text-sm ${ledgerPanel}`}>
           <p className={ledgerMuted}>Reward to risk</p>
@@ -341,12 +382,12 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
           <p className={`mt-1 ${ledgerMuted}`}>Quantity {preview?.quantity ?? (sizeError || "fills in after entry and stop")}</p>
         </div>
         <div className="mt-5 flex gap-2">
-          <button type="button" disabled={pending} onClick={() => runPreview()} className="rounded-full border border-[var(--ledger-accent)] px-4 py-2 text-sm text-[var(--ledger-accent)]">
+          <button type="button" disabled={pending || Boolean(priceError)} onClick={() => runPreview()} className="rounded-full border border-[var(--ledger-accent)] px-4 py-2 text-sm text-[var(--ledger-accent)]">
             Preview
           </button>
           <button
             type="button"
-            disabled={pending || !preview}
+            disabled={pending || !preview || Boolean(priceError)}
             onClick={place}
             className="rounded-full bg-[var(--ledger-accent)] px-4 py-2 text-sm text-white transition hover:brightness-110 disabled:opacity-50"
           >
@@ -355,13 +396,16 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
         </div>
       </section>
       <section className={`flex min-h-[28rem] flex-col p-6 ${ledgerPanel}`}>
-        <h2 className="text-sm uppercase tracking-[0.16em] text-[var(--ledger-muted)]">Risk summary</h2>
-        <p className="mt-2 text-2xl">{form.symbol.trim().toUpperCase() || "Symbol"}</p>
-        <dl className="mt-6 grid flex-1 content-start gap-3">
+        <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ledger-muted)]">Risk summary</h2>
+        <p className="mt-2 text-2xl font-bold">{form.symbol.trim().toUpperCase() || "Symbol"}</p>
+        <dl className="mt-6 grid flex-1 content-start">
           {summary.map(([label, value]) => (
-            <div key={label} className="flex items-center justify-between border-b border-[var(--ledger-border)] py-2 text-sm">
-              <dt className={ledgerMuted}>{label}</dt>
-              <dd className="capitalize">{value}</dd>
+            <div key={label} className="border-b border-[var(--ledger-border)] py-3">
+              <div className="flex items-center justify-between text-sm">
+                <dt className={`text-xs uppercase tracking-[0.12em] ${ledgerMuted}`}>{label}</dt>
+                <dd className="font-semibold capitalize">{value}</dd>
+              </div>
+              {label === "R:R" ? <RewardRiskBar ratio={liveRr} /> : null}
             </div>
           ))}
         </dl>

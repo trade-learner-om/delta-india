@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Copy, Eye, EyeOff } from "lucide-react";
+import { Copy, Eye, EyeOff, Key, ShieldCheck, Sliders } from "lucide-react";
 import { api } from "../../api";
 import { ledgerField, ledgerMuted, ledgerPanel } from "./deskFormat";
 
@@ -127,6 +127,7 @@ export default function SettingsPage({ token, me, theme, onThemeChange, deltaAcc
           <h1 className="text-xl">Accounts</h1>
           <p className={`mt-1 text-sm ${ledgerMuted}`}>{me?.email} · one login for crypto and forex</p>
           <AccountList
+            icon={Key}
             title="Crypto"
             accounts={deltaAccounts}
             onAdd={() => setDeltaOpen(true)}
@@ -135,6 +136,7 @@ export default function SettingsPage({ token, me, theme, onThemeChange, deltaAcc
             onRisk={(account, risk) => setRisk(account, "crypto", risk)}
           />
           <AccountList
+            icon={ShieldCheck}
             title="Forex"
             accounts={mt5Accounts}
             onAdd={() => setMt5Open(true)}
@@ -202,13 +204,13 @@ export default function SettingsPage({ token, me, theme, onThemeChange, deltaAcc
       ) : null}
       {tab === "security" ? (
         <section className={`p-5 ${ledgerPanel}`}>
-          <h1 className="text-xl">Security</h1>
+          <h1 className="flex items-center gap-2 text-xl"><ShieldCheck size={18} /> Security</h1>
           <p className={`mt-3 text-sm ${ledgerMuted}`}>This login stays valid until the coming Saturday at 00:00 IST. Signing in again after that starts a new session.</p>
         </section>
       ) : null}
       {tab === "preferences" ? (
         <section className={`p-5 ${ledgerPanel}`}>
-          <h1 className="text-xl">Preferences</h1>
+          <h1 className="flex items-center gap-2 text-xl"><Sliders size={18} /> Preferences</h1>
           <p className={`mt-1 text-sm ${ledgerMuted}`}>The same choice is on the sidebar.</p>
           <div className="mt-4 flex gap-2">
             {["dark", "light"].map((choice) => (
@@ -250,23 +252,53 @@ function FormModal({ title, onClose, children }) {
   );
 }
 
-function AccountList({ title, accounts, onAdd, onSelect, onDelete, onRisk }) {
+function StatusMark({ badge }) {
+  if (badge === "Connected") {
+    return (
+      <span className="inline-flex items-center gap-2 text-xs text-[var(--ledger-profit)]">
+        <span className="relative flex h-2.5 w-2.5">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+        </span>
+        Connected
+      </span>
+    );
+  }
+  if (badge === "Disconnected") {
+    return (
+      <span className="inline-flex items-center gap-2 text-xs text-[var(--ledger-loss)]">
+        <span className="inline-flex h-2.5 w-2.5 rounded-full bg-rose-500" />
+        Disconnected
+      </span>
+    );
+  }
+  return (
+    <span className={`inline-flex items-center gap-2 text-xs ${ledgerMuted}`}>
+      <span className="inline-flex h-2.5 w-2.5 rounded-full bg-[var(--ledger-muted)]" />
+      Saved
+    </span>
+  );
+}
+
+function AccountList({ icon: Icon, title, accounts, onAdd, onSelect, onDelete, onRisk }) {
   const rows = accounts || [];
   return (
     <div className="mt-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xs uppercase tracking-[0.16em] text-[var(--ledger-accent)]">{title}</h2>
+        <h2 className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.16em] text-[var(--ledger-accent)]">
+          {Icon ? <Icon size={14} /> : null}
+          {title}
+        </h2>
         <button type="button" onClick={onAdd} className="text-xs text-[var(--ledger-accent)]">Add account</button>
       </div>
       {rows.length === 0 ? <p className={`mt-2 text-sm ${ledgerMuted}`}>None saved yet.</p> : null}
       {rows.map((account) => {
         const badge = account.walletError ? "Disconnected" : account.selected ? "Connected" : "Saved";
-        const tone = account.walletError ? "text-[var(--ledger-loss)]" : account.selected ? "text-[var(--ledger-profit)]" : ledgerMuted;
         return (
           <div key={account.id} className={`mt-2 flex items-center justify-between gap-3 px-3 py-2 text-sm ${ledgerPanel}`}>
             <button type="button" onClick={() => onSelect(account)} className="text-left">
               <span className="block">{account.accountName}</span>
-              <span className={`text-xs ${tone}`}>{badge}</span>
+              <StatusMark badge={badge} />
             </button>
             <input
               className={`w-20 ${ledgerField}`}

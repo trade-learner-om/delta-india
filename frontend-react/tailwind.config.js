@@ -18,10 +18,20 @@ export default {
           "0%": { opacity: "0", transform: "scale(0.97)" },
           "100%": { opacity: "1", transform: "scale(1)" },
         },
+        "flash-green": {
+          "0%": { backgroundColor: "rgb(16 185 129 / 0.3)" },
+          "100%": { backgroundColor: "transparent" },
+        },
+        "flash-red": {
+          "0%": { backgroundColor: "rgb(244 63 94 / 0.3)" },
+          "100%": { backgroundColor: "transparent" },
+        },
       },
       animation: {
         "slide-in": "slide-in 0.25s ease-out",
         "scale-in": "scale-in 0.2s ease-out",
+        "flash-green": "flash-green 0.7s ease-out",
+        "flash-red": "flash-red 0.7s ease-out",
       },
     },
   },

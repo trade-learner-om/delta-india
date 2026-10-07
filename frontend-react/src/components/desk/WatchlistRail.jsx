@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { api } from "../../api";
+import CoinIcon from "../CoinIcon";
 import ChoiceSwitch from "./ChoiceSwitch";
+import PriceFlashTicker from "./PriceFlashTicker";
 import { formatPrice, ledgerField, ledgerMuted, ledgerPanel, pnlClass } from "./deskFormat";
 
 const STORAGE_KEY = "ledger.watchlist.open";
@@ -132,9 +134,12 @@ export default function WatchlistRail({ token, watchlist, livePrices, onChanged,
             const change = Number(tick.change24h);
             return (
               <div key={item.id || item.symbol} className="group mt-2 flex items-center justify-between gap-2 text-sm">
-                <span>{item.symbol}</span>
+                <span className="inline-flex items-center gap-2">
+                  <CoinIcon coin={item.symbol} size={16} />
+                  {item.symbol}
+                </span>
                 <span className="ml-auto text-right">
-                  <span className="block">{formatPrice(price)}</span>
+                  <PriceFlashTicker value={price} className="block">{formatPrice(price)}</PriceFlashTicker>
                   {Number.isFinite(change) ? <span className={`text-[11px] ${pnlClass(change)}`}>{change > 0 ? "▲" : change < 0 ? "▼" : "•"} {Math.abs(change).toFixed(2)}%</span> : null}
                 </span>
                 <button

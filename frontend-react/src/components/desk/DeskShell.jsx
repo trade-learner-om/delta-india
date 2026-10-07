@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { BookOpen, LayoutDashboard, LogOut, Moon, Settings, Sun, TrendingUp } from "lucide-react";
+import { BookOpen, CandlestickChart, Home, LogOut, Moon, Settings, Sun } from "lucide-react";
 import { api, apiUpload } from "../../api";
 import { applyThemeClass, readStoredTheme, writeStoredTheme } from "../../utils/theme/themeStorage";
 import { ledgerMuted, ledgerPanel } from "./deskFormat";
@@ -11,8 +11,8 @@ import TradeDetailModal from "./TradeDetailModal";
 import TradePage from "./TradePage";
 
 const PAGES = [
-  ["home", "Home", LayoutDashboard],
-  ["trade", "Trade", TrendingUp],
+  ["home", "Home", Home],
+  ["trade", "Trade", CandlestickChart],
   ["journal", "Journal", BookOpen],
   ["settings", "Settings", Settings],
 ];
@@ -66,7 +66,7 @@ export default function DeskShell({ token, me, livePrices, liveStatus, positions
                 key={id}
                 type="button"
                 onClick={() => setPage(id)}
-                className={`flex items-center gap-3 rounded-xl px-3 py-2 text-left text-sm ${active ? "bg-[var(--ledger-accent)]/10 text-[var(--ledger-accent)] shadow-[inset_3px_0_0_var(--ledger-accent)]" : ledgerMuted}`}
+                className={`flex origin-left items-center gap-3 rounded-xl px-3 py-2 text-left text-sm transition ${active ? "bg-gradient-to-r from-[var(--ledger-accent)]/20 to-transparent text-[var(--ledger-accent)] shadow-[inset_3px_0_0_var(--ledger-accent)]" : `${ledgerMuted} hover:scale-[1.02]`}`}
               >
                 <Icon size={16} />
                 {label}
