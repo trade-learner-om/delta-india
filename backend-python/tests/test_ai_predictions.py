@@ -1,0 +1,77 @@
+import pytest
+from fastapi import HTTPException
+from pydantic import ValidationError
+
+from cryptobridge.market_intel.candles import CRYPTO_PAIRS, FOREX_TICKERS, venue_for
+from cryptobridge.market_intel.schema import DISCLAIMER, AiForecast, Horizon
+from cryptobridge.market_intel.service import AiPredictionService
+
+
+def _forecast() -> AiForecast:
+    horizon = Horizon(bullish=60, bearish=40)
+    return AiForecast(
+        horizon_1h=horizon,
+        horizon_4h=horizon,
+        horizon_24h=horizon,
+        technical_rationale="Higher lows on the last candles.",
+        disclaimer="model text",
+    )
+
+
+def test_symbol_maps_cover_the_universe():
+    assert CRYPTO_PAIRS == {"BTCUSD": "BTC/USDT", "ETHUSD": "ETH/USDT", "SOLUSD": "SOL/USDT"}
+    assert set(FOREX_TICKERS) == {
+        "EURUSD",
+        "GBPUSD",
+        "AUDUSD",
+        "NZDUSD",
+        "USDCAD",
+        "USDCHF",
+        "USDJPY",
+        "EURJPY",
+        "GBPJPY",
+        "XAUUSD",
+        "XAGUSD",
+    }
+    assert venue_for("btcusd") == "crypto"
+    assert venue_for("XAUUSD") == "forex"
+
+
+def test_unknown_symbol_is_rejected():
+    with pytest.raises(HTTPException) as exc:
+        venue_for("DOGEUSD")
+    assert exc.value.status_code == 400
+
+
+def test_horizon_percentages_stay_in_range():
+    with pytest.raises(ValidationError):
+        Horizon(bullish=101, bearish=0)
+
+
+@pytest.mark.asyncio
+async def test_predict_uses_the_fixed_disclaimer_and_cache():
+    calls = {"n": 0}
+
+    def fetch(symbol):
+        return "crypto", [{"time": 1, "open": 1, "high": 2, "low": 1, "close": 2, "volume": 3}]
+
+    def generate(prompt):
+        calls["n"] += 1
+        assert "BTCUSD" in prompt
+        return _forecast()
+
+    service = AiPredictionService("test-key", fetch=fetch, generate=generate)
+    first = await service.predict("btcusd")
+    second = await service.predict("BTCUSD")
+    assert first["disclaimer"] == DISCLAIMER
+    assert first["venue"] == "crypto"
+    assert second is first or second["technical_rationale"] == first["technical_rationale"]
+    assert calls["n"] == 1
+
+
+@pytest.mark.asyncio
+async def test_missing_api_key_is_unavailable():
+    service = AiPredictionService("")
+    with pytest.raises(HTTPException) as exc:
+        await service.predict("BTCUSD")
+    assert exc.value.status_code == 503

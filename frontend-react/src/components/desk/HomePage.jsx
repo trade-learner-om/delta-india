@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { api } from "../../api";
 import CoinIcon from "../CoinIcon";
 import { decoratePositionRow } from "../positions/positionsUtils";
+import MarketOutlook from "./MarketOutlook";
 import PriceFlashTicker from "./PriceFlashTicker";
 import AreaChart from "./AreaChart";
 import WatchlistRail from "./WatchlistRail";
@@ -83,6 +84,7 @@ export default function HomePage({ token, entries, watchlist, livePrices, positi
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto]">
       <div className="space-y-4">
+        <MarketOutlook token={token} livePrices={livePrices} />
         {positions.length || orders.length ? (
           <div className={`grid gap-3 ${positions.length && orders.length ? "md:grid-cols-2" : ""}`}>
             {positions.length ? <RunningPositions rows={positions} /> : null}

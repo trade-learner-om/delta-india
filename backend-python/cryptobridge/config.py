@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     log_max_bytes: int = Field(default=10_485_760, validation_alias="LOG_MAX_BYTES")
     log_backup_count: int = Field(default=5, validation_alias="LOG_BACKUP_COUNT")
     user_agent: str = "CryptoBridge/0.1"
+    gemini_api_key: str = Field(default="", validation_alias="GEMINI_API_KEY")
 
     @property
     def cors_origins_list(self) -> list[str]:
