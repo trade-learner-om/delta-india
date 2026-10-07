@@ -9,10 +9,6 @@ const PRODUCTION_APP_HOSTS = new Set([
   "crypto.signalbridge.in",
 ]);
 
-function isLocalDevHost(hostname) {
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
-}
-
 function localDevHost(hostname) {
   return hostname === "[::1]" ? "localhost" : hostname;
 }
@@ -30,11 +26,11 @@ function localWsBase(hostname) {
 function resolveApiBase() {
   if (typeof window !== "undefined") {
     const hostname = window.location.hostname;
-    if (isLocalDevHost(hostname)) {
-      return localApiBase(hostname);
-    }
     if (PRODUCTION_APP_HOSTS.has(hostname)) {
       return PRODUCTION_API_BASE;
+    }
+    if (window.location.protocol === "http:") {
+      return localApiBase(hostname);
     }
     if (window.location.protocol === "https:") {
       const configuredHttps = String(import.meta.env.VITE_API_BASE || "").trim();
@@ -53,11 +49,11 @@ function resolveApiBase() {
 }
 
 function resolveWsBase(apiBase) {
-  if (typeof window !== "undefined" && isLocalDevHost(window.location.hostname)) {
-    return localWsBase(window.location.hostname);
-  }
   if (typeof window !== "undefined" && PRODUCTION_APP_HOSTS.has(window.location.hostname)) {
     return PRODUCTION_WS_BASE;
+  }
+  if (typeof window !== "undefined" && window.location.protocol === "http:") {
+    return localWsBase(window.location.hostname);
   }
   const configured = import.meta.env.VITE_WS_BASE;
   if (configured) {

@@ -37,7 +37,7 @@ class Settings(BaseSettings):
         validation_alias="CORS_ALLOW_ORIGIN_REGEX",
     )
     cors_allowed_origins: str = Field(
-        default="https://crypto.signalbridge.in,http://localhost:5173,http://127.0.0.1:5173",
+        default="https://crypto.signalbridge.in,http://localhost:5173,http://127.0.0.1:5173,http://ec2-13-232-110-145.ap-south-1.compute.amazonaws.com:5173",
         validation_alias="CORS_ALLOWED_ORIGINS",
     )
     public_api_base_url: str = Field(
