@@ -58,6 +58,25 @@ export function formatRealizedR(ratio) {
   return `${sign}${number.toFixed(2)}R`;
 }
 
+export function roundToStep(price, step = 0.05) {
+  const number = Number(price);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return Number((Math.round(number / step) * step).toFixed(2));
+}
+
+export function targetPriceFromR(side, entry, stop, multiple) {
+  const entryValue = Number(entry);
+  const stopValue = Number(stop);
+  const rewardMultiple = Number(multiple);
+  if (![entryValue, stopValue, rewardMultiple].every((item) => Number.isFinite(item) && item > 0)) return null;
+  const distance = Math.abs(entryValue - stopValue);
+  if (distance <= 0) return null;
+  const sell = ["SELL", "SHORT"].includes(String(side).toUpperCase());
+  const raw = sell ? entryValue - rewardMultiple * distance : entryValue + rewardMultiple * distance;
+  if (raw <= 0) return null;
+  return roundToStep(raw);
+}
+
 export function rewardRisk(side, entry, stop, target) {
   const entryValue = Number(entry);
   const stopValue = Number(stop);

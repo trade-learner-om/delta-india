@@ -74,6 +74,18 @@ def test_close_by_deal_counts_as_a_close():
     assert rows[0]["exit"] == 1.3
 
 
+def test_target_r_keeps_two_decimal_places():
+    from fastapi import HTTPException
+
+    from cryptobridge.services.account_service import _target_r
+
+    assert _target_r("2.25") == 2.25
+    assert _target_r(0.5) == 0.5
+    assert _target_r(None) is None
+    with pytest.raises(HTTPException, match="two decimal"):
+        _target_r("1.234")
+
+
 def test_realized_r_uses_the_exit_against_the_stop():
     assert realized_r("BUY", 100, 90, 120) == 2
     assert realized_r("SELL", 100, 110, 80) == 2

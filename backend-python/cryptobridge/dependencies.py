@@ -75,3 +75,7 @@ def get_watchlist_service(request: Request):
 
 def get_journal_service(request: Request):
     return request.app.state.journal_service
+
+
+def get_mt5_price_feed(request: Request):
+    return request.app.state.mt5_price_feed

@@ -14,7 +14,7 @@ from cryptobridge.delta.market_data import DeltaMarketDataService
 from cryptobridge.delta.private_stream import DeltaPrivateStreamService
 from cryptobridge.delta.rest_client import DeltaRestClient
 from cryptobridge.mt5.client import Mt5Client
-from cryptobridge.routers import accounts, auth, journal, live, meta, mt5_accounts, orders, positions, watchlist
+from cryptobridge.routers import accounts, auth, journal, live, market, meta, mt5_accounts, orders, positions, watchlist
 from cryptobridge.services.account_service import AccountService
 from cryptobridge.services.auth_service import AuthService
 from cryptobridge.services.journal_service import JournalService
@@ -82,6 +82,7 @@ async def lifespan(app: FastAPI):
     app.state.mt5_account_service = mt5_account_service
     app.state.watchlist_service = watchlist_service
     app.state.journal_service = journal_service
+    app.state.mt5_price_feed = mt5_feed
 
     await market.start()
     await positions_service.start()
@@ -129,6 +130,7 @@ app.include_router(orders.router)
 app.include_router(meta.router)
 app.include_router(positions.router)
 app.include_router(watchlist.router)
+app.include_router(market.router)
 app.include_router(journal.router)
 app.include_router(live.router)
 

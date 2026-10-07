@@ -2,9 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../../api";
 import { livePriceFromTick, lookupLiveTick } from "../../utils/pricePrecision";
 import ChoiceSwitch from "./ChoiceSwitch";
-import { formatPrice, formatRr, ledgerField, ledgerMuted, ledgerPanel, money, rewardRisk } from "./deskFormat";
+import { formatPrice, ledgerField, ledgerMuted, ledgerPanel, money, rewardRisk, roundToStep, targetPriceFromR } from "./deskFormat";
 
 const EMPTY = { venue: "crypto", symbol: "", side: "BUY", orderType: "MARKET", entry: "", stopLoss: "", target: "" };
+
+function limitR(value) {
+  const match = String(value).match(/^\d*\.?\d{0,2}/);
+  return match ? match[0] : "";
+}
 
 function accountForVenue(venue, deltaAccounts, mt5Accounts) {
   const list = venue === "forex" ? mt5Accounts : deltaAccounts;
@@ -17,6 +22,8 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
   const [sizeError, setSizeError] = useState("");
   const [pending, setPending] = useState(false);
   const [risk, setRisk] = useState("");
+  const [targetMode, setTargetMode] = useState("price");
+  const [targetR, setTargetR] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [suggestMessage, setSuggestMessage] = useState("");
   const [suggestOpen, setSuggestOpen] = useState(false);
@@ -24,13 +31,20 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
   const chosenSymbol = useRef("");
   const previewSeq = useRef(0);
   const account = accountForVenue(form.venue, deltaAccounts, mt5Accounts);
-  const liveRr = rewardRisk(form.side, form.entry, form.stopLoss, form.target);
+  const orderTarget = targetMode === "r"
+    ? targetPriceFromR(form.side, form.entry, form.stopLoss, targetR)
+    : roundToStep(form.target);
+  const liveRr = targetMode === "r"
+    ? (Number(targetR) > 0 ? Number(targetR) : null)
+    : rewardRisk(form.side, form.entry, form.stopLoss, orderTarget);
   const stopDistance = Math.abs(Number(form.entry) - Number(form.stopLoss));
   const livePrice = livePriceFromTick(lookupLiveTick(livePrices, form.symbol));
 
   useEffect(() => {
     setRisk(account?.riskAmount ?? "");
-  }, [account?.id, account?.riskAmount, form.venue]);
+    setTargetMode(account?.targetMode === "r" ? "r" : "price");
+    setTargetR(account?.targetR ?? "");
+  }, [account?.id, account?.riskAmount, account?.targetMode, account?.targetR, form.venue]);
 
   useEffect(() => {
     const text = form.symbol.trim();
@@ -74,11 +88,14 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
 
   const chooseSymbol = (symbol) => {
     const next = String(symbol || "").toUpperCase();
+    const venue = form.venue;
     chosenSymbol.current = next;
     setSuggestOpen(false);
     setSuggestions([]);
     setPreview(null);
     setForm((current) => ({ ...current, symbol: next }));
+    api("/market/subscribe", { method: "POST", token, body: { venue, symbol: next } })
+      .catch((err) => onNotify("error", err.message || "Live price is unavailable."));
   };
 
   const onSymbolKeyDown = (event) => {
@@ -104,7 +121,7 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
     orderType: form.orderType,
     entry: form.entry === "" ? null : Number(form.entry),
     stopLoss: form.stopLoss === "" ? null : Number(form.stopLoss),
-    target: form.target === "" ? null : Number(form.target),
+    target: orderTarget,
   };
 
   const ensureSelected = async () => {
@@ -126,6 +143,19 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
     const path = form.venue === "forex" ? `/mt5/accounts/${account.id}/risk` : `/accounts/${account.id}/risk`;
     await api(path, { method: "PATCH", token, body: { riskAmount: next } });
     onNotify("success", "Risk amount saved.");
+    onReload?.();
+  };
+
+  const saveTarget = async (mode, multiple) => {
+    if (!account) return;
+    const next = multiple === "" || multiple == null ? null : Number(multiple);
+    if (next != null && (!Number.isFinite(next) || next <= 0)) {
+      onNotify("error", "R multiple must be greater than 0.");
+      setTargetR(account.targetR ?? "");
+      return;
+    }
+    const path = form.venue === "forex" ? `/mt5/accounts/${account.id}/target` : `/accounts/${account.id}/target`;
+    await api(path, { method: "PATCH", token, body: { targetMode: mode, targetR: next } });
     onReload?.();
   };
 
@@ -164,7 +194,7 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
       previewSeq.current += 1;
       window.clearTimeout(handle);
     };
-  }, [form.symbol, form.entry, form.stopLoss, form.side, form.venue, form.target, risk, account?.id]);
+  }, [form.symbol, form.entry, form.stopLoss, form.side, form.venue, form.target, targetMode, targetR, risk, account?.id]);
 
   const place = async () => {
     setPending(true);
@@ -185,7 +215,7 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
     ["Venue", form.venue],
     ["Risk", Number(risk) > 0 ? money(risk) : "—"],
     ["Quantity", preview?.quantity ?? (sizeError || "—")],
-    ["R:R", formatRr(liveRr)],
+    ["R:R", liveRr == null ? "—" : `1:${Number(liveRr).toFixed(targetMode === "r" ? 2 : 1)}`],
     ["Stop distance", Number.isFinite(stopDistance) && stopDistance > 0 ? stopDistance : "—"],
   ];
 
@@ -270,17 +300,44 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
             options={[["MARKET", "Market"], ["LIMIT", "Limit"], ["SL", "Stop"]]}
           />
           <div className="grid grid-cols-3 gap-3">
-            {["entry", "stopLoss", "target"].map((key) => (
+            {["entry", "stopLoss"].map((key) => (
               <label key={key} className="text-sm capitalize">
                 {key === "stopLoss" ? "Stop" : key}
                 <input className={`mt-1 ${ledgerField}`} value={form[key]} onChange={set(key)} />
               </label>
             ))}
+            <div className="text-sm">
+              <ChoiceSwitch
+                value={targetMode}
+                onChange={(mode) => {
+                  setTargetMode(mode);
+                  saveTarget(mode, targetR).catch((err) => onNotify("error", err.message || "Could not save the target choice."));
+                }}
+                options={[["price", "Price"], ["r", "R"]]}
+              />
+              {targetMode === "r" ? (
+                <>
+                  <input
+                    className={`mt-1 ${ledgerField}`}
+                    inputMode="decimal"
+                    placeholder="R multiple"
+                    value={targetR}
+                    onChange={(event) => setTargetR(limitR(event.target.value))}
+                    onBlur={() => saveTarget("r", targetR).catch((err) => onNotify("error", err.message || "Could not save the R multiple."))}
+                  />
+                  <span className={`mt-1 block text-xs ${ledgerMuted}`}>
+                    {orderTarget == null ? "Target price appears after entry and stop" : `Target ${formatPrice(orderTarget)}`}
+                  </span>
+                </>
+              ) : (
+                <input className={`mt-1 ${ledgerField}`} placeholder="Target price" value={form.target} onChange={set("target")} />
+              )}
+            </div>
           </div>
         </div>
         <div className={`mt-4 p-3 text-sm ${ledgerPanel}`}>
           <p className={ledgerMuted}>Reward to risk</p>
-          <p className="mt-1 text-2xl font-semibold">{formatRr(liveRr)}</p>
+          <p className="mt-1 text-2xl font-semibold">{liveRr == null ? "—" : `1:${Number(liveRr).toFixed(targetMode === "r" ? 2 : 1)}`}</p>
           <p className={`mt-1 ${ledgerMuted}`}>Quantity {preview?.quantity ?? (sizeError || "fills in after entry and stop")}</p>
         </div>
         <div className="mt-5 flex gap-2">

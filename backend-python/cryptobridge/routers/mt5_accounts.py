@@ -33,6 +33,11 @@ class UpdateRiskRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class UpdateTargetRequest(BaseModel):
+    targetMode: str
+    targetR: float | None = None
+
+
 @terminals_router.get("/terminals")
 async def list_running_terminals(user=Depends(get_user)):
     del user
@@ -96,6 +101,16 @@ async def update_mt5_risk(
     accounts: Mt5AccountService = Depends(get_mt5_account_service),
 ):
     return await accounts.update_risk(user, account_id, body.riskAmount)
+
+
+@router.patch("/{account_id}/target")
+async def update_mt5_target(
+    account_id: str,
+    body: UpdateTargetRequest,
+    user=Depends(get_user),
+    accounts: Mt5AccountService = Depends(get_mt5_account_service),
+):
+    return await accounts.update_target(user, account_id, body.targetMode, body.targetR)
 
 
 @router.delete("/{account_id}")

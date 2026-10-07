@@ -26,6 +26,11 @@ class UpdateRiskRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class UpdateTargetRequest(BaseModel):
+    targetMode: str
+    targetR: float | None = None
+
+
 @router.get("")
 async def list_accounts(user=Depends(get_user), accounts: AccountService = Depends(get_account_service)):
     items = await accounts.list_accounts(user)
@@ -78,3 +83,13 @@ async def update_risk(
     accounts: AccountService = Depends(get_account_service),
 ):
     return await accounts.update_risk(user, account_id, body.risk_amount)
+
+
+@router.patch("/{account_id}/target")
+async def update_target(
+    account_id: str,
+    body: UpdateTargetRequest,
+    user=Depends(get_user),
+    accounts: AccountService = Depends(get_account_service),
+):
+    return await accounts.update_target(user, account_id, body.targetMode, body.targetR)

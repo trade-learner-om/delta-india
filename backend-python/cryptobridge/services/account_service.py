@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from bson import ObjectId
@@ -20,6 +21,20 @@ log = logging.getLogger(__name__)
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _target_r(value) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise http_error(400, "R multiple must be greater than 0.") from exc
+    if number <= 0:
+        raise http_error(400, "R multiple must be greater than 0.")
+    if number != number.quantize(Decimal("0.01")):
+        raise http_error(400, "R multiple can have at most two decimal places.")
+    return float(number)
 
 
 def _mask_api_key(value: str | None) -> str:
@@ -146,6 +161,23 @@ class AccountService:
         account["id"] = str(account["_id"])
         return await self._enrich_account(account, user.get("selectedAccountId"))
 
+    async def update_target(self, user: dict[str, Any], account_id: str, target_mode: str, target_r: float | None) -> dict:
+        mode = str(target_mode or "").strip().lower()
+        if mode not in {"price", "r"}:
+            raise http_error(400, "Target mode must be price or r.")
+        multiple = _target_r(target_r)
+        account = await self._accounts.find_one({"_id": ObjectId(account_id), "userId": user["id"]})
+        if not account:
+            raise http_error(404, "Account not found.")
+        await self._accounts.update_one(
+            {"_id": account["_id"]},
+            {"$set": {"targetMode": mode, "targetR": multiple, "updatedAt": _now()}},
+        )
+        account["targetMode"] = mode
+        account["targetR"] = multiple
+        account["id"] = str(account["_id"])
+        return await self._enrich_account(account, user.get("selectedAccountId"))
+
     async def require_selected_account(self, user: dict[str, Any]) -> dict | None:
         account_id = user.get("selectedAccountId")
         if not account_id:
@@ -193,6 +225,8 @@ class AccountService:
             "marketType": "INDIAN_CRYPTO",
             "brokerType": "DELTA",
             "riskAmount": account.get("riskAmount") if account.get("riskAmount") is not None else DEFAULT_RISK,
+            "targetMode": account.get("targetMode") if account.get("targetMode") in {"price", "r"} else "price",
+            "targetR": account.get("targetR"),
             "availableMargin": None,
             "balance": None,
             "netEquity": None,

@@ -11,6 +11,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from cryptobridge.config import settings
 from cryptobridge.exceptions import http_error
+from cryptobridge.services.account_service import _target_r
 from cryptobridge.mt5.client import LocalMt5Error, Mt5Client
 from cryptobridge.mt5.terminal_detection import find_running_terminal_paths
 from cryptobridge.utils import crypto as secret_crypto
@@ -142,6 +143,22 @@ class Mt5AccountService:
         account["riskAmount"] = float(risk_amount)
         return self._view(account, selected=str(user.get("selectedAccountId") or "") == account_id)
 
+    async def update_target(self, user: dict[str, Any], account_id: str, target_mode: str, target_r: float | None) -> dict[str, Any]:
+        mode = str(target_mode or "").strip().lower()
+        if mode not in {"price", "r"}:
+            raise http_error(400, "Target mode must be price or r.")
+        multiple = _target_r(target_r)
+        account = await self._get(user, account_id)
+        if not account:
+            raise http_error(404, "Account not found.")
+        await self._accounts.update_one(
+            {"_id": account["_id"]},
+            {"$set": {"targetMode": mode, "targetR": multiple, "updatedAt": _now()}},
+        )
+        account["targetMode"] = mode
+        account["targetR"] = multiple
+        return self._view(account, selected=str(user.get("selectedAccountId") or "") == account_id)
+
     def search_symbols(self, account: dict[str, Any], query: str, limit: int = 40) -> list[str]:
         return self._client.search_symbols(self.credentials_for(account), query, limit)
 
@@ -267,6 +284,8 @@ class Mt5AccountService:
             "marketType": "FOREX",
             "selected": selected,
             "riskAmount": doc.get("riskAmount") if doc.get("riskAmount") is not None else DEFAULT_RISK,
+            "targetMode": doc.get("targetMode") if doc.get("targetMode") in {"price", "r"} else "price",
+            "targetR": doc.get("targetR"),
             "balance": doc.get("balance"),
             "netEquity": doc.get("equity"),
             "currencyCode": doc.get("currency") or "USD",
