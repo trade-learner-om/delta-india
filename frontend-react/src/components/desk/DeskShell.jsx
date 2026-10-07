@@ -120,7 +120,13 @@ export default function DeskShell({ token, me, livePrices, liveStatus, onLogout,
             />
           ) : null}
           {page === "journal" ? (
-            <JournalPage token={token} onNotify={onNotify} onChanged={reload} />
+            <JournalPage
+              token={token}
+              deltaAccounts={deltaAccounts}
+              mt5Accounts={mt5Accounts}
+              onNotify={onNotify}
+              onChanged={reload}
+            />
           ) : null}
           {page === "settings" ? (
             <SettingsPage

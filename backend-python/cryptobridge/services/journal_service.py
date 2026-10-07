@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time as dt_time, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -51,15 +51,30 @@ class JournalService:
         await self._repair_crypto_pnl(docs)
         return [self._public(doc) for doc in docs]
 
-    async def recent(self, user: dict[str, Any]) -> list[dict[str, Any]]:
+    async def recent(
+        self,
+        user: dict[str, Any],
+        *,
+        account_ids: list[str],
+        from_day: str,
+        to_day: str,
+    ) -> list[dict[str, Any]]:
+        start, end = _date_window(from_day, to_day)
+        delta_accounts, mt5_accounts = await self._accounts_for(user, account_ids)
+        if not delta_accounts and not mt5_accounts:
+            raise http_error(400, "Select at least one account.")
         saved = {
             doc.get("sourceTradeId")
             async for doc in self._entries.find({"userId": user["id"]}, {"sourceTradeId": 1})
         }
         rows: list[dict[str, Any]] = []
-        rows.extend(await self._delta_recent(user))
-        rows.extend(await self._mt5_recent(user))
-        fresh = [row for row in rows if row.get("sourceTradeId") not in saved]
+        rows.extend(await self._delta_recent(delta_accounts, start))
+        rows.extend(await self._mt5_recent(mt5_accounts, start, end))
+        fresh = [
+            row
+            for row in rows
+            if row.get("sourceTradeId") not in saved and _day_in_range(row.get("exitTimeIst"), start, end)
+        ]
         fresh.sort(key=lambda row: row.get("exitTimeIst") or "", reverse=True)
         return fresh
 
@@ -71,7 +86,12 @@ class JournalService:
         if existing:
             return self._public(existing)
         match = None
-        for row in await self.recent(user):
+        for row in await self.recent(
+            user,
+            account_ids=list(body.get("accountId") or body.get("accountIds") or []),
+            from_day=str(body.get("from") or ""),
+            to_day=str(body.get("to") or ""),
+        ):
             if row.get("sourceTradeId") == source_id:
                 match = row
                 break
@@ -141,13 +161,45 @@ class JournalService:
             raise http_error(404, "Chart snapshot file is missing.")
         return path, str(doc.get("chartType") or "image/png")
 
-    async def _delta_recent(self, user: dict[str, Any]) -> list[dict[str, Any]]:
-        cursor = self._delta_accounts._accounts.find({"userId": user["id"]})
+    async def _accounts_for(self, user: dict[str, Any], account_ids: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        delta_accounts: list[dict[str, Any]] = []
+        mt5_accounts: list[dict[str, Any]] = []
+        for account_id in account_ids:
+            try:
+                oid = ObjectId(str(account_id))
+            except Exception:
+                continue
+            delta = await self._delta_accounts._accounts.find_one({"_id": oid, "userId": user["id"]})
+            if delta:
+                delta_accounts.append(delta)
+                continue
+            forex = await self._mt5_accounts._accounts.find_one({"_id": oid, "userId": user["id"]})
+            if forex:
+                mt5_accounts.append(forex)
+        return delta_accounts, mt5_accounts
+
+    async def _delta_fills(self, api_key: str, api_secret: str, start: date) -> list[dict[str, Any]]:
+        fills: list[dict[str, Any]] = []
+        after: str | None = None
+        for _ in range(8):
+            page, after = await self._delta.fetch_fills_page(api_key, api_secret, page_size=100, after=after)
+            if not page:
+                break
+            fills.extend(page)
+            oldest = min(
+                (delta_time_to_ist(item.get("created_at") or item.get("timestamp")) or "9999-99-99")[:10]
+                for item in page
+            )
+            if not after or oldest < start.isoformat():
+                break
+        return fills
+
+    async def _delta_recent(self, accounts: list[dict[str, Any]], start: date) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
-        async for account in cursor:
+        for account in accounts:
             try:
                 api_key, api_secret = self._delta_accounts.credentials_for(account)
-                fills = await self._delta.fetch_fills(api_key, api_secret, page_size=100)
+                fills = await self._delta_fills(api_key, api_secret, start)
             except Exception:
                 log.exception("Delta fills unavailable for account %s", account.get("_id"))
                 continue
@@ -160,12 +212,17 @@ class JournalService:
             rows.extend(self._pair_delta_fills(account, fills, contract_values))
         return rows
 
-    async def _mt5_recent(self, user: dict[str, Any]) -> list[dict[str, Any]]:
-        cursor = self._mt5_accounts._accounts.find({"userId": user["id"]})
+    async def _mt5_recent(self, accounts: list[dict[str, Any]], start: date, end: date) -> list[dict[str, Any]]:
+        start_at = datetime.combine(start, dt_time.min) - timedelta(days=1)
+        end_at = datetime.combine(end, dt_time.max) + timedelta(days=1)
         rows: list[dict[str, Any]] = []
-        async for account in cursor:
+        for account in accounts:
             try:
-                trades, offset = self._mt5_accounts._client.closed_trades(self._mt5_accounts.credentials_for(account))
+                trades, offset = self._mt5_accounts._client.closed_trades(
+                    self._mt5_accounts.credentials_for(account),
+                    from_time=start_at,
+                    to_time=end_at,
+                )
             except LocalMt5Error as exc:
                 log.info("MT5 history skipped for %s: %s", account.get("login"), exc)
                 continue
@@ -453,6 +510,22 @@ def _fill_contract_value(opened: dict[str, Any], closed: dict[str, Any]) -> floa
         if value > 0:
             return value
     return None
+
+
+def _date_window(from_day: str, to_day: str) -> tuple[date, date]:
+    try:
+        start = date.fromisoformat(str(from_day or "").strip())
+        end = date.fromisoformat(str(to_day or "").strip())
+    except ValueError as exc:
+        raise http_error(400, "Choose a from date and a to date.") from exc
+    if end < start:
+        raise http_error(400, "The to date must be on or after the from date.")
+    return start, end
+
+
+def _day_in_range(ist_iso: str | None, start: date, end: date) -> bool:
+    day = str(ist_iso or "")[:10]
+    return bool(day) and start.isoformat() <= day <= end.isoformat()
 
 
 def _optional_float(value: Any) -> float | None:

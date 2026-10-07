@@ -22,6 +22,8 @@ export default function SettingsPage({ token, me, theme, onThemeChange, deltaAcc
   const [serverIp, setServerIp] = useState("");
   const [serverIpError, setServerIpError] = useState("");
   const [ipCopied, setIpCopied] = useState(false);
+  const [deltaOpen, setDeltaOpen] = useState(false);
+  const [mt5Open, setMt5Open] = useState(false);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -48,6 +50,9 @@ export default function SettingsPage({ token, me, theme, onThemeChange, deltaAcc
   const addDelta = async () => {
     await api("/accounts", { method: "POST", token, body: deltaForm });
     setDeltaForm({ apiKey: "", apiSecret: "" });
+    setShowDeltaKey(false);
+    setShowDeltaSecret(false);
+    setDeltaOpen(false);
     onNotify("success", "Delta account added.");
     onReload();
   };
@@ -57,6 +62,8 @@ export default function SettingsPage({ token, me, theme, onThemeChange, deltaAcc
     setMt5Form({ login: "", password: "", server: "", terminalPath: "" });
     setTerminalPaths([]);
     setTerminalNote("");
+    setShowMt5Password(false);
+    setMt5Open(false);
     onNotify("success", "Forex account added.");
     onReload();
   };
@@ -122,11 +129,24 @@ export default function SettingsPage({ token, me, theme, onThemeChange, deltaAcc
           <AccountList
             title="Crypto"
             accounts={deltaAccounts}
+            onAdd={() => setDeltaOpen(true)}
             onSelect={(account) => select(account, "crypto")}
             onDelete={(account) => remove(account, "crypto")}
             onRisk={(account, risk) => setRisk(account, "crypto", risk)}
           />
-          <div className={`mt-4 px-3 py-3 text-sm ${ledgerPanel}`}>
+          <AccountList
+            title="Forex"
+            accounts={mt5Accounts}
+            onAdd={() => setMt5Open(true)}
+            onSelect={(account) => select(account, "forex")}
+            onDelete={(account) => remove(account, "forex")}
+            onRisk={(account, risk) => setRisk(account, "forex", risk)}
+          />
+        </section>
+      ) : null}
+      {deltaOpen ? (
+        <FormModal title="Add Delta account" onClose={() => setDeltaOpen(false)}>
+          <div className={`px-3 py-3 text-sm ${ledgerPanel}`}>
             <p className={`text-xs uppercase tracking-[0.14em] ${ledgerMuted}`}>Whitelist this IP on Delta</p>
             <p className="mt-2 font-mono text-lg text-[var(--ledger-accent)]">{serverIp || serverIpError || "Loading server IP..."}</p>
             <p className={`mt-1 text-xs ${ledgerMuted}`}>Delta allows signed calls only from this server address. Copy it into the API key profile before adding the account.</p>
@@ -135,51 +155,50 @@ export default function SettingsPage({ token, me, theme, onThemeChange, deltaAcc
               {ipCopied ? "Copied" : "Copy IP"}
             </button>
           </div>
-          <div className="mt-4 grid gap-2">
-            <SecretField placeholder="Delta API key" value={deltaForm.apiKey} shown={showDeltaKey} onToggle={() => setShowDeltaKey((current) => !current)} onChange={(value) => setDeltaForm({ ...deltaForm, apiKey: value })} />
-            <SecretField placeholder="Delta API secret" value={deltaForm.apiSecret} shown={showDeltaSecret} onToggle={() => setShowDeltaSecret((current) => !current)} onChange={(value) => setDeltaForm({ ...deltaForm, apiSecret: value })} />
-            <button type="button" onClick={() => addDelta().catch((err) => onNotify("error", err.message))} className="rounded-full bg-[var(--ledger-accent)] px-4 py-2 text-sm text-white">Add Delta account</button>
+          <SecretField placeholder="Delta API key" value={deltaForm.apiKey} shown={showDeltaKey} onToggle={() => setShowDeltaKey((current) => !current)} onChange={(value) => setDeltaForm({ ...deltaForm, apiKey: value })} />
+          <SecretField placeholder="Delta API secret" value={deltaForm.apiSecret} shown={showDeltaSecret} onToggle={() => setShowDeltaSecret((current) => !current)} onChange={(value) => setDeltaForm({ ...deltaForm, apiSecret: value })} />
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setDeltaOpen(false)} className={`rounded-full px-4 py-2 text-sm ${ledgerMuted}`}>Cancel</button>
+            <button type="button" onClick={() => addDelta().catch((err) => onNotify("error", err.message))} className="rounded-full bg-[var(--ledger-accent)] px-4 py-2 text-sm text-white">Add account</button>
           </div>
-          <AccountList
-            title="Forex"
-            accounts={mt5Accounts}
-            onSelect={(account) => select(account, "forex")}
-            onDelete={(account) => remove(account, "forex")}
-            onRisk={(account, risk) => setRisk(account, "forex", risk)}
-          />
-          <div className="mt-4 grid gap-2">
-            <input className={ledgerField} placeholder="login" value={mt5Form.login} onChange={(event) => setMt5Form({ ...mt5Form, login: event.target.value })} />
-            <SecretField placeholder="password" value={mt5Form.password} shown={showMt5Password} onToggle={() => setShowMt5Password((current) => !current)} onChange={(value) => setMt5Form({ ...mt5Form, password: value })} />
-            <input className={ledgerField} placeholder="server" value={mt5Form.server} onChange={(event) => setMt5Form({ ...mt5Form, server: event.target.value })} />
-            <div className="flex gap-2">
-              <input
-                className={`min-w-0 flex-1 ${ledgerField}`}
-                placeholder="terminal64.exe path"
-                value={mt5Form.terminalPath}
-                onChange={(event) => setMt5Form({ ...mt5Form, terminalPath: event.target.value })}
-              />
-              <button type="button" disabled={detecting} onClick={detectTerminals} className="rounded-full border border-[var(--ledger-accent)] px-4 py-2 text-sm text-[var(--ledger-accent)] disabled:opacity-50">
-                {detecting ? "Detecting..." : "Detect running"}
-              </button>
+        </FormModal>
+      ) : null}
+      {mt5Open ? (
+        <FormModal title="Add MT5 account" onClose={() => setMt5Open(false)}>
+          <input className={ledgerField} placeholder="login" value={mt5Form.login} onChange={(event) => setMt5Form({ ...mt5Form, login: event.target.value })} />
+          <SecretField placeholder="password" value={mt5Form.password} shown={showMt5Password} onToggle={() => setShowMt5Password((current) => !current)} onChange={(value) => setMt5Form({ ...mt5Form, password: value })} />
+          <input className={ledgerField} placeholder="server" value={mt5Form.server} onChange={(event) => setMt5Form({ ...mt5Form, server: event.target.value })} />
+          <div className="flex gap-2">
+            <input
+              className={`min-w-0 flex-1 ${ledgerField}`}
+              placeholder="terminal64.exe path"
+              value={mt5Form.terminalPath}
+              onChange={(event) => setMt5Form({ ...mt5Form, terminalPath: event.target.value })}
+            />
+            <button type="button" disabled={detecting} onClick={detectTerminals} className="rounded-full border border-[var(--ledger-accent)] px-4 py-2 text-sm text-[var(--ledger-accent)] disabled:opacity-50">
+              {detecting ? "Detecting..." : "Detect running"}
+            </button>
+          </div>
+          {terminalPaths.length > 1 ? (
+            <div className="grid gap-1">
+              {terminalPaths.map((path) => (
+                <button
+                  key={path}
+                  type="button"
+                  onClick={() => setMt5Form((current) => ({ ...current, terminalPath: path }))}
+                  className={`truncate rounded-lg px-3 py-2 text-left text-xs ${mt5Form.terminalPath === path ? "bg-[var(--ledger-accent)]/15 text-[var(--ledger-accent)]" : `${ledgerMuted} bg-[var(--ledger-canvas)]`}`}
+                >
+                  {path}
+                </button>
+              ))}
             </div>
-            {terminalPaths.length > 1 ? (
-              <div className="grid gap-1">
-                {terminalPaths.map((path) => (
-                  <button
-                    key={path}
-                    type="button"
-                    onClick={() => setMt5Form((current) => ({ ...current, terminalPath: path }))}
-                    className={`truncate rounded-lg px-3 py-2 text-left text-xs ${mt5Form.terminalPath === path ? "bg-[var(--ledger-accent)]/15 text-[var(--ledger-accent)]" : `${ledgerMuted} bg-[var(--ledger-canvas)]`}`}
-                  >
-                    {path}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            {terminalNote ? <p className={`text-xs ${ledgerMuted}`}>{terminalNote}</p> : null}
-            <button type="button" onClick={() => addMt5().catch((err) => onNotify("error", err.message))} className="rounded-full bg-[var(--ledger-accent)] px-4 py-2 text-sm text-white">Add MT5 account</button>
+          ) : null}
+          {terminalNote ? <p className={`text-xs ${ledgerMuted}`}>{terminalNote}</p> : null}
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setMt5Open(false)} className={`rounded-full px-4 py-2 text-sm ${ledgerMuted}`}>Cancel</button>
+            <button type="button" onClick={() => addMt5().catch((err) => onNotify("error", err.message))} className="rounded-full bg-[var(--ledger-accent)] px-4 py-2 text-sm text-white">Add account</button>
           </div>
-        </section>
+        </FormModal>
       ) : null}
       {tab === "security" ? (
         <section className={`p-5 ${ledgerPanel}`}>
@@ -220,11 +239,27 @@ function SecretField({ placeholder, value, shown, onToggle, onChange }) {
   );
 }
 
-function AccountList({ title, accounts, onSelect, onDelete, onRisk }) {
+function FormModal({ title, onClose, children }) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className={`w-full max-w-md space-y-3 p-5 ${ledgerPanel}`} onClick={(event) => event.stopPropagation()}>
+        <h2 className="text-lg">{title}</h2>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function AccountList({ title, accounts, onAdd, onSelect, onDelete, onRisk }) {
+  const rows = accounts || [];
   return (
     <div className="mt-6">
-      <h2 className="text-xs uppercase tracking-[0.16em] text-[var(--ledger-accent)]">{title}</h2>
-      {(accounts || []).map((account) => {
+      <div className="flex items-center justify-between">
+        <h2 className="text-xs uppercase tracking-[0.16em] text-[var(--ledger-accent)]">{title}</h2>
+        <button type="button" onClick={onAdd} className="text-xs text-[var(--ledger-accent)]">Add account</button>
+      </div>
+      {rows.length === 0 ? <p className={`mt-2 text-sm ${ledgerMuted}`}>None saved yet.</p> : null}
+      {rows.map((account) => {
         const badge = account.walletError ? "Disconnected" : account.selected ? "Connected" : "Saved";
         const tone = account.walletError ? "text-[var(--ledger-loss)]" : account.selected ? "text-[var(--ledger-profit)]" : ledgerMuted;
         return (

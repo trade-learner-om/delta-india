@@ -63,6 +63,21 @@ def _symbol_spec(info) -> dict[str, Any]:
     }
 
 
+def _deal_code(value: Any) -> int:
+    if value is None or value == "":
+        return -1
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return -1
+
+
+def _naive(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.replace(tzinfo=None)
+
+
 def _last_error(mt5, default: str) -> str:
     try:
         code, message = mt5.last_error()
@@ -240,12 +255,22 @@ class Mt5Client:
 
         return self._call(credentials, operation)
 
-    def closed_trades(self, credentials: dict[str, str], *, days: int = 30) -> tuple[list[dict[str, Any]], int]:
+    def closed_trades(
+        self,
+        credentials: dict[str, str],
+        *,
+        from_time: datetime | None = None,
+        to_time: datetime | None = None,
+        days: int = 30,
+    ) -> tuple[list[dict[str, Any]], int]:
         def operation(mt5):
             offset = self._offset_seconds(mt5)
-            to_time = datetime.now(timezone.utc) + timedelta(seconds=offset)
-            from_time = to_time - timedelta(days=max(1, days))
-            deals = mt5.history_deals_get(from_time, to_time) or []
+            end = _naive(to_time) if to_time is not None else datetime.now(timezone.utc) + timedelta(seconds=offset)
+            start = _naive(from_time) if from_time is not None else end - timedelta(days=max(1, days))
+            deals = mt5.history_deals_get(start, end)
+            if deals is None:
+                log.warning("MT5 history_deals_get returned no result: %s", _last_error(mt5, "history unavailable"))
+                deals = []
             return self._closed_rows(mt5, deals), offset
 
         return self._call(credentials, operation)
@@ -300,13 +325,16 @@ class Mt5Client:
         entry_in = getattr(mt5, "DEAL_ENTRY_IN", 0)
         entry_out = getattr(mt5, "DEAL_ENTRY_OUT", 1)
         entry_inout = getattr(mt5, "DEAL_ENTRY_INOUT", 2)
+        entry_out_by = getattr(mt5, "DEAL_ENTRY_OUT_BY", 3)
         type_buy = getattr(mt5, "DEAL_TYPE_BUY", 0)
+        kept_entries = {entry_in, entry_out, entry_inout, entry_out_by}
         groups: dict[str, list[dict]] = {}
         for deal in deals:
             data = deal._asdict() if hasattr(deal, "_asdict") else dict(deal)
-            if int(data.get("entry") if data.get("entry") is not None else -1) not in {entry_in, entry_out, entry_inout}:
+            entry = _deal_code(data.get("entry"))
+            if entry not in kept_entries:
                 continue
-            if int(data.get("type") if data.get("type") is not None else -1) not in {type_buy, getattr(mt5, "DEAL_TYPE_SELL", 1)}:
+            if _deal_code(data.get("type")) not in {type_buy, getattr(mt5, "DEAL_TYPE_SELL", 1)}:
                 continue
             position_id = str(data.get("position_id") or data.get("position") or "")
             if not position_id:
@@ -315,13 +343,13 @@ class Mt5Client:
         rows: list[dict[str, Any]] = []
         for position_id, items in groups.items():
             ordered = sorted(items, key=lambda item: int(item.get("time") or 0))
-            opens = [item for item in ordered if int(item.get("entry") or -1) in {entry_in, entry_inout}]
-            closes = [item for item in ordered if int(item.get("entry") or -1) in {entry_out, entry_inout}]
+            opens = [item for item in ordered if _deal_code(item.get("entry")) in {entry_in, entry_inout}]
+            closes = [item for item in ordered if _deal_code(item.get("entry")) in {entry_out, entry_inout, entry_out_by}]
             if not opens or not closes:
                 continue
             opened = opens[0]
             for closed in closes:
-                if closed is opened and int(closed.get("entry") or -1) != entry_inout:
+                if closed is opened and _deal_code(closed.get("entry")) != entry_inout:
                     continue
                 side = "BUY" if int(opened.get("type") or 0) == type_buy else "SELL"
                 profit = float(closed.get("profit") or 0)

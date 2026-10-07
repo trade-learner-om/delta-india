@@ -585,12 +585,24 @@ class DeltaRestClient:
         page_size: int = 50,
         after: str | None = None,
     ) -> list[dict[str, Any]]:
+        rows, _after = await self.fetch_fills_page(api_key, api_secret, page_size=page_size, after=after)
+        return rows
+
+    async def fetch_fills_page(
+        self,
+        api_key: str,
+        api_secret: str,
+        *,
+        page_size: int = 50,
+        after: str | None = None,
+    ) -> tuple[list[dict[str, Any]], str | None]:
         params: dict[str, str | int] = {"page_size": page_size}
         if after:
             params["after"] = after
         node = await self._signed_get("/v2/fills", api_key, api_secret, params)
         rows = node.get("result", [])
-        return [item for item in rows if isinstance(item, dict)]
+        cursor = (node.get("meta") or {}).get("after")
+        return [item for item in rows if isinstance(item, dict)], (str(cursor) if cursor else None)
 
     async def fetch_margined_positions(self, api_key: str, api_secret: str) -> list[dict]:
         node = await self._signed_get("/v2/positions/margined", api_key, api_secret)
