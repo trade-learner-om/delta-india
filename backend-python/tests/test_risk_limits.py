@@ -19,12 +19,12 @@ def test_max_risk_at_and_above_threshold():
     assert max_risk_amount(5000) == 50.0
 
 
-def test_assert_risk_within_cap_rejects_over():
-    with pytest.raises(HTTPException) as exc:
-        assert_risk_within_cap(11, 500)
-    assert "max risk" in str(exc.value.detail).lower()
-
-
-def test_assert_risk_within_cap_allows_at_cap():
+def test_assert_risk_within_cap_allows_any_positive_amount():
+    assert_risk_within_cap(11, 500)
     assert_risk_within_cap(10, 500)
-    assert_risk_within_cap(50, 5000)
+    assert_risk_within_cap(500, 100)
+
+
+def test_assert_risk_within_cap_rejects_non_positive():
+    with pytest.raises(HTTPException):
+        assert_risk_within_cap(0, 5000)

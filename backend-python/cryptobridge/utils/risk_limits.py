@@ -20,16 +20,9 @@ def max_risk_cap_description() -> str:
 
 
 def assert_risk_within_cap(risk_amount: float, available_margin: float | None) -> None:
+    """Risk is no longer capped by available margin."""
     from cryptobridge.exceptions import http_error
 
-    cap = max_risk_amount(available_margin)
-    risk = float(risk_amount or 0)
-    if risk <= 0:
+    del available_margin
+    if float(risk_amount or 0) <= 0:
         raise http_error(400, "Risk amount must be greater than 0.")
-    if cap <= 0:
-        raise http_error(400, "Available balance is required to size risk.")
-    if risk > cap:
-        raise http_error(
-            400,
-            f"Risk amount cannot exceed max risk ({cap:.2f}). {max_risk_cap_description()}.",
-        )

@@ -13,7 +13,6 @@ from cryptobridge.delta.rest_client import (
 )
 from cryptobridge.exceptions import http_error
 from cryptobridge.utils import crypto as secret_crypto
-from cryptobridge.utils.risk_limits import assert_risk_within_cap
 from cryptobridge.utils.risk_sizing import RiskSizingError, compute_position_size
 
 
@@ -80,14 +79,6 @@ class OrderService:
             risk_amount = float(account.get("riskAmount") or 0)
             if risk_amount <= 0:
                 raise http_error(400, "Risk amount is required for position sizing.")
-            enriched = await self._account_service._enrich_account(
-                {**account, "id": str(account["_id"])},
-                user.get("selectedAccountId"),
-            )
-            assert_risk_within_cap(
-                risk_amount,
-                AccountService.effective_available_margin(enriched),
-            )
             try:
                 size = compute_position_size(
                     risk_amount,
