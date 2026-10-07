@@ -190,6 +190,24 @@ def calc_sl_pips(symbol: str, entry: float, stop_loss: float) -> float:
     return round(distance, precision)
 
 
+def realized_r(side: str, entry: float, stop_loss: float, exit_price: Optional[float]) -> Optional[float]:
+    """Return in R for a closed trade: price move to the exit divided by the stop distance."""
+    try:
+        entry_value = float(entry)
+        stop_value = float(stop_loss)
+        exit_value = float(exit_price)
+    except (TypeError, ValueError):
+        return None
+    if entry_value <= 0 or stop_value <= 0 or exit_value <= 0:
+        return None
+    sell = str(side or "").upper() in {"SELL", "SHORT"}
+    risk = stop_value - entry_value if sell else entry_value - stop_value
+    reward = entry_value - exit_value if sell else exit_value - entry_value
+    if risk <= 0:
+        return None
+    return round(reward / risk, 2)
+
+
 def calc_rr(side: str, entry: float, stop_loss: float, target: Optional[float]) -> Optional[float]:
     if target is None:
         return None

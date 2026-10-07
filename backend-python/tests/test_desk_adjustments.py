@@ -5,6 +5,7 @@ import pytest
 from cryptobridge.mt5.client import LocalMt5Error, Mt5Client, _load_mt5
 from cryptobridge.mt5.terminal_detection import find_running_terminal_paths, find_running_terminal_processes
 from cryptobridge.services.journal_service import crypto_usd_pnl
+from cryptobridge.utils.forex_risk import realized_r
 from cryptobridge.services.mt5_account_service import _same_terminal_path
 from cryptobridge.services.watchlist_service import filter_suggestions
 
@@ -71,6 +72,13 @@ def test_close_by_deal_counts_as_a_close():
     )
     assert len(rows) == 1
     assert rows[0]["exit"] == 1.3
+
+
+def test_realized_r_uses_the_exit_against_the_stop():
+    assert realized_r("BUY", 100, 90, 120) == 2
+    assert realized_r("SELL", 100, 110, 80) == 2
+    assert realized_r("BUY", 100, 90, 95) == -0.5
+    assert realized_r("BUY", 100, 110, 120) is None
 
 
 def test_crypto_pnl_scales_contracts_into_usd():

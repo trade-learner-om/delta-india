@@ -3,7 +3,7 @@ import { api, apiUpload } from "../../api";
 import TradeDetailModal from "./TradeDetailModal";
 import {
   formatIst,
-  formatRr,
+  formatRealizedR,
   istDayKey,
   journalStats,
   ledgerField,
@@ -101,7 +101,7 @@ export default function JournalPage({ token, deltaAccounts = [], mt5Accounts = [
       ? await api(`/journal/${trade.id}`, {
         method: "PATCH",
         token,
-        body: { setup: trade.setup, reason: trade.reason },
+        body: { setup: trade.setup, reason: trade.reason, stopLoss: trade.stopLoss ?? null },
       })
       : await api("/journal", {
         method: "POST",
@@ -110,6 +110,7 @@ export default function JournalPage({ token, deltaAccounts = [], mt5Accounts = [
           sourceTradeId: trade.sourceTradeId,
           setup: trade.setup,
           reason: trade.reason,
+          stopLoss: trade.stopLoss ?? null,
           from: query?.from,
           to: query?.to,
           accountId: query?.accountIds || [],
@@ -278,7 +279,7 @@ export default function JournalPage({ token, deltaAccounts = [], mt5Accounts = [
                   <td className="py-2">{trade.symbol}</td>
                   <td className="py-2">{trade.side}</td>
                   <td className="py-2"><span className={pnlPill(trade.netPnl)}>{money(trade.netPnl)}</span></td>
-                  <td className="py-2">{formatRr(trade.rr)}</td>
+                  <td className="py-2">{formatRealizedR(trade.rr)}</td>
                   <td className="py-2">
                     <button type="button" className="text-xs text-[var(--ledger-accent)]" onClick={() => setOpen(trade)}>Open</button>
                     <label className={`ml-3 text-xs text-[var(--ledger-accent)] ${trade.locked ? "opacity-40" : "cursor-pointer"}`}>

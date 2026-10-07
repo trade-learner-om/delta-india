@@ -17,6 +17,7 @@ class SaveJournalRequest(BaseModel):
     from_day: str = Field(alias="from")
     to: str
     accountId: list[str] = Field(default_factory=list)
+    stopLoss: float | None = None
 
     model_config = {"populate_by_name": True}
 

@@ -38,6 +38,26 @@ export function seriesChangePercent(values) {
   return ((last - first) / Math.abs(first)) * 100;
 }
 
+export function realizedRr(side, entry, stop, exitPrice) {
+  const entryValue = Number(entry);
+  const stopValue = Number(stop);
+  const exitValue = Number(exitPrice);
+  if (![entryValue, stopValue, exitValue].every((item) => Number.isFinite(item) && item > 0)) return null;
+  const sell = ["SELL", "SHORT"].includes(String(side).toUpperCase());
+  const risk = sell ? stopValue - entryValue : entryValue - stopValue;
+  const reward = sell ? entryValue - exitValue : exitValue - entryValue;
+  if (risk <= 0) return null;
+  return reward / risk;
+}
+
+export function formatRealizedR(ratio) {
+  if (ratio == null || ratio === "") return "—";
+  const number = Number(ratio);
+  if (!Number.isFinite(number)) return "—";
+  const sign = number > 0 ? "+" : "";
+  return `${sign}${number.toFixed(2)}R`;
+}
+
 export function rewardRisk(side, entry, stop, target) {
   const entryValue = Number(entry);
   const stopValue = Number(stop);

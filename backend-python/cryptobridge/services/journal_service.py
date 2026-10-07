@@ -14,7 +14,7 @@ from cryptobridge.exceptions import http_error
 from cryptobridge.mt5.client import LocalMt5Error
 from cryptobridge.services.account_service import AccountService
 from cryptobridge.services.mt5_account_service import Mt5AccountService
-from cryptobridge.utils.forex_risk import calc_rr
+from cryptobridge.utils.forex_risk import calc_rr, realized_r
 from cryptobridge.utils.journal_time import delta_time_to_ist, mt5_server_time_to_ist
 
 log = logging.getLogger(__name__)
@@ -103,11 +103,13 @@ class JournalService:
             "userId": user["id"],
             "setup": str(body.get("setup") or "").strip(),
             "reason": str(body.get("reason") or "").strip(),
+            "stopLoss": _optional_float(body.get("stopLoss")) if "stopLoss" in body else match.get("stopLoss"),
             "chartPath": None,
             "savedAt": now,
             "updatedAt": now,
             "lockedAt": now + LOCK_AFTER,
         }
+        doc["rr"] = realized_r(str(doc.get("side") or ""), float(doc.get("entry") or 0), float(doc.get("stopLoss") or 0), doc.get("exit"))
         doc.pop("id", None)
         result = await self._entries.insert_one(doc)
         doc["_id"] = result.inserted_id
@@ -123,11 +125,14 @@ class JournalService:
             updates["reason"] = str(body.get("reason") or "").strip()
         if "stopLoss" in body or "stop_loss" in body:
             updates["stopLoss"] = _optional_float(body.get("stopLoss", body.get("stop_loss")))
+            updates["rr"] = realized_r(
+                str(doc.get("side") or ""),
+                float(doc.get("entry") or 0),
+                float(updates["stopLoss"] or 0),
+                doc.get("exit"),
+            )
         if "target" in body:
             updates["target"] = _optional_float(body.get("target"))
-        stop = updates.get("stopLoss", doc.get("stopLoss"))
-        target = updates.get("target", doc.get("target"))
-        updates["rr"] = calc_rr(str(doc.get("side") or ""), float(doc.get("entry") or 0), float(stop or 0), _optional_float(target))
         await self._entries.update_one({"_id": doc["_id"]}, {"$set": updates})
         doc.update(updates)
         return self._public(doc)

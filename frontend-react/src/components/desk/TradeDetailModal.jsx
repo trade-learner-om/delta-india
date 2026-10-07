@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { apiBlob } from "../../api";
-import { formatIst, ledgerField, ledgerMuted, ledgerPanel, money, pnlClass } from "./deskFormat";
+import { formatIst, formatRealizedR, ledgerField, ledgerMuted, ledgerPanel, money, pnlClass, realizedRr } from "./deskFormat";
 
 const CHART_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
@@ -14,6 +14,7 @@ function chartFileFromClipboard(clipboard) {
 export default function TradeDetailModal({ token, trade, onClose, onSaved, onUploadChart }) {
   const [setup, setSetup] = useState(trade?.setup || "");
   const [reason, setReason] = useState(trade?.reason || "");
+  const [stop, setStop] = useState(trade?.stopLoss ?? "");
   const [chartUrl, setChartUrl] = useState("");
   const [chartFile, setChartFile] = useState(null);
   const [pending, setPending] = useState(false);
@@ -98,7 +99,13 @@ export default function TradeDetailModal({ token, trade, onClose, onSaved, onUpl
     setPending(true);
     setError("");
     try {
-      const savedEntry = await onSaved({ ...trade, setup, reason });
+      const stopValue = stop === "" || stop == null ? null : Number(stop);
+      const savedEntry = await onSaved({
+        ...trade,
+        setup,
+        reason,
+        stopLoss: Number.isFinite(stopValue) && stopValue > 0 ? stopValue : null,
+      });
       const entry = savedEntry?.id ? savedEntry : trade;
       if (chartFile && entry?.id) {
         await onUploadChart?.(entry, chartFile);
@@ -133,8 +140,6 @@ export default function TradeDetailModal({ token, trade, onClose, onSaved, onUpl
             ["Entry", trade.entry],
             ["Exit", trade.exit],
             ["Quantity", trade.quantity],
-            ["Stop", trade.stopLoss ?? "—"],
-            ["R", trade.rr ?? "—"],
             ["Net P/L", money(trade.netPnl)],
             ["Entry time", formatIst(trade.entryTimeIst)],
             ["Exit time", formatIst(trade.exitTimeIst)],
@@ -144,6 +149,23 @@ export default function TradeDetailModal({ token, trade, onClose, onSaved, onUpl
               <dd className={label === "Net P/L" ? `mt-1 ${pnlClass(trade.netPnl)}` : "mt-1"}>{value}</dd>
             </div>
           ))}
+          <div className={`rounded-xl px-3 py-2 ${ledgerPanel}`}>
+            <dt className={`text-[11px] uppercase tracking-wider ${ledgerMuted}`}>Stop</dt>
+            {locked ? (
+              <dd className="mt-1">{trade.stopLoss ?? "—"}</dd>
+            ) : (
+              <input
+                className={`mt-1 ${ledgerField}`}
+                inputMode="decimal"
+                value={stop}
+                onChange={(event) => setStop(event.target.value)}
+              />
+            )}
+          </div>
+          <div className={`rounded-xl px-3 py-2 ${ledgerPanel}`}>
+            <dt className={`text-[11px] uppercase tracking-wider ${ledgerMuted}`}>R</dt>
+            <dd className="mt-1">{formatRealizedR(realizedRr(trade.side, trade.entry, stop, trade.exit))}</dd>
+          </div>
         </dl>
         {chartUrl ? <img src={chartUrl} alt="Chart snapshot" className="mt-4 w-full rounded-xl" /> : null}
         {locked ? null : (

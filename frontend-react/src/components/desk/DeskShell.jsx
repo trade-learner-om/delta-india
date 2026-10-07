@@ -152,7 +152,7 @@ export default function DeskShell({ token, me, livePrices, liveStatus, onLogout,
           onClose={() => setOpenTrade(null)}
           onSaved={async (trade) => {
             const saved = trade.id
-              ? await api(`/journal/${trade.id}`, { method: "PATCH", token, body: { setup: trade.setup, reason: trade.reason } })
+              ? await api(`/journal/${trade.id}`, { method: "PATCH", token, body: { setup: trade.setup, reason: trade.reason, stopLoss: trade.stopLoss ?? null } })
               : trade;
             await reload();
             return saved;
