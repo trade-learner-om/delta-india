@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 from cryptobridge.market_intel.candles import CRYPTO_PAIRS, FOREX_TICKERS, venue_for
 from cryptobridge.market_intel.schema import DISCLAIMER, AiForecast, Horizon
-from cryptobridge.market_intel.service import AiPredictionService
+from cryptobridge.market_intel.service import MODEL, AiPredictionService
 
 
 def _forecast() -> AiForecast:
@@ -35,8 +35,11 @@ def test_symbol_maps_cover_the_universe():
         "XAUUSD",
         "XAGUSD",
     }
+    assert FOREX_TICKERS["XAUUSD"] == "GC=F"
+    assert FOREX_TICKERS["XAGUSD"] == "SI=F"
     assert venue_for("btcusd") == "crypto"
     assert venue_for("XAUUSD") == "forex"
+    assert MODEL == "gemini-3.8-flash"
 
 
 def test_unknown_symbol_is_rejected():
@@ -93,11 +96,14 @@ class _GeminiResponse:
 
 
 class _GeminiClient:
+    last_model = None
+
     def __init__(self, api_key):
         self.api_key = api_key
         self.models = self
 
     def generate_content(self, **kwargs):
+        _GeminiClient.last_model = kwargs.get("model")
         return _GeminiResponse(
             text='{"marker":"candle-structure"}',
             parsed=_forecast(),
@@ -121,6 +127,7 @@ def test_gemini_response_text_is_logged(monkeypatch, caplog):
     with caplog.at_level(logging.INFO, logger="cryptobridge.market_intel.service"):
         forecast = service._generate_with_gemini("prompt")
     assert forecast.technical_rationale == "Higher lows on the last candles."
+    assert _GeminiClient.last_model == "gemini-3.8-flash"
     assert '{"marker":"candle-structure"}' in caplog.text
     assert "STOP" in caplog.text
     assert "allowed" in caplog.text

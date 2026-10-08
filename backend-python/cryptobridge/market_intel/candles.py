@@ -22,8 +22,8 @@ FOREX_TICKERS = {
     "USDJPY": "USDJPY=X",
     "EURJPY": "EURJPY=X",
     "GBPJPY": "GBPJPY=X",
-    "XAUUSD": "XAUUSD=X",
-    "XAGUSD": "XAGUSD=X",
+    "XAUUSD": "GC=F",
+    "XAGUSD": "SI=F",
 }
 
 
