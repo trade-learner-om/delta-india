@@ -371,6 +371,19 @@ class PositionsService:
             "updatedAt": self._now().isoformat(),
         }
 
+    async def publish_after_order(self, user: dict[str, Any]) -> None:
+        user_id = user["id"]
+        self._forex_cache.pop(user_id, None)
+        try:
+            for doc in await self._accounts.list_raw_accounts(user):
+                if str(doc.get("exchange") or "delta").lower() != "delta":
+                    continue
+                with contextlib.suppress(Exception):
+                    await self._private_stream.refresh_account_positions(str(doc["_id"]), force=True)
+            await self.refresh_user(user_id)
+        except Exception:
+            log.exception("Open book refresh after place failed for %s", user_id)
+
     async def refresh_user(self, user_id: str) -> dict[str, Any] | None:
         """Rebuild and broadcast open positions immediately (e.g. after calendar fills)."""
         user = {"id": user_id}

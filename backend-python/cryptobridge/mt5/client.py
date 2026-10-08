@@ -20,6 +20,17 @@ class LocalMt5Error(RuntimeError):
     pass
 
 
+def day_change_percent(last: float | None, day_open: float | None) -> float | None:
+    try:
+        last_price = float(last)
+        open_price = float(day_open)
+    except (TypeError, ValueError):
+        return None
+    if open_price == 0:
+        return None
+    return (last_price - open_price) / open_price * 100.0
+
+
 def _load_mt5():
     try:
         import MetaTrader5 as mt5
@@ -165,11 +176,19 @@ class Mt5Client:
             bid = float(tick.bid or 0)
             ask = float(tick.ask or 0)
             last = float(tick.last or 0) or ((bid + ask) / 2 if bid and ask else bid or ask)
+            day_open = None
+            try:
+                rates = mt5.copy_rates_from_pos(name, mt5.TIMEFRAME_D1, 0, 1)
+            except Exception:
+                rates = None
+            if rates is not None and len(rates):
+                day_open = float(rates[0]["open"])
             return {
                 "symbol": name,
                 "bid": bid or None,
                 "ask": ask or None,
                 "last": last or None,
+                "change24h": day_change_percent(last, day_open),
                 "time": int(getattr(tick, "time", 0) or 0),
                 "digits": int(getattr(info, "digits", 0) or 0) if info is not None else None,
             }

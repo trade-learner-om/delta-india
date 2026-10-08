@@ -4,9 +4,10 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from cryptobridge.dependencies import get_mt5_account_service, get_order_service, get_user
+from cryptobridge.dependencies import get_mt5_account_service, get_order_service, get_positions_service, get_user
 from cryptobridge.services.mt5_account_service import Mt5AccountService
 from cryptobridge.services.order_service import OrderService
+from cryptobridge.services.positions_service import PositionsService
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
@@ -51,13 +52,17 @@ async def place_order(
     user=Depends(get_user),
     orders: OrderService = Depends(get_order_service),
     mt5_accounts: Mt5AccountService = Depends(get_mt5_account_service),
+    positions: PositionsService = Depends(get_positions_service),
 ):
     payload = body.model_dump(by_alias=True)
     if payload.get("quantity") is not None and payload.get("size") is None:
         payload["size"] = payload["quantity"]
     if str(payload.get("venue") or user.get("selectedVenue") or "") == "forex":
-        return await mt5_accounts.place(user, payload)
-    return await orders.place(user, payload)
+        result = await mt5_accounts.place(user, payload)
+    else:
+        result = await orders.place(user, payload)
+    await positions.publish_after_order(user)
+    return result
 
 
 @router.post("/{order_id}/cancel")

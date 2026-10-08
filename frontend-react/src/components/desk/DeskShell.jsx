@@ -34,16 +34,21 @@ export default function DeskShell({ token, me, livePrices, liveStatus, positions
   }, [theme]);
 
   const reload = async () => {
-    const [journal, list, crypto, forex] = await Promise.all([
-      api("/journal", { token }),
+    const journalPromise = api("/journal", { token })
+      .then((journal) => setEntries(journal.entries || []))
+      .catch((err) => onNotify("error", err.message || "Journal could not load."));
+    const restPromise = Promise.all([
       api("/watchlist", { token }),
       api("/accounts", { token }),
       api("/mt5/accounts", { token }),
-    ]);
-    setEntries(journal.entries || []);
-    setWatchlist(list.items || []);
-    setDeltaAccounts(crypto.accounts || []);
-    setMt5Accounts(forex.accounts || []);
+    ])
+      .then(([list, crypto, forex]) => {
+        setWatchlist(list.items || []);
+        setDeltaAccounts(crypto.accounts || []);
+        setMt5Accounts(forex.accounts || []);
+      })
+      .catch((err) => onNotify("error", err.message || "Dashboard data did not load."));
+    await Promise.all([journalPromise, restPromise]);
   };
 
   useEffect(() => {
@@ -118,6 +123,7 @@ export default function DeskShell({ token, me, livePrices, liveStatus, positions
               deltaAccounts={deltaAccounts}
               mt5Accounts={mt5Accounts}
               livePrices={livePrices}
+              positionsPayload={positionsPayload}
               onNotify={onNotify}
               onReload={reload}
             />

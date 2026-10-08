@@ -72,13 +72,15 @@ class AiPredictionService:
         with contextlib.suppress(asyncio.CancelledError):
             await worker
 
-    async def predict(self, symbol: str) -> dict[str, Any]:
+    async def predict(self, symbol: str, *, refresh: bool = False) -> dict[str, Any]:
         if not self._api_key:
             raise http_error(503, "GEMINI_API_KEY is not configured.")
         key = str(symbol or "").upper().strip()
         if not key:
             raise http_error(400, "Symbol is required.")
         async with self._lock:
+            if refresh:
+                self._cache.pop(key, None)
             cached = self._fresh(key)
             if cached is not None:
                 return cached

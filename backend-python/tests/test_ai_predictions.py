@@ -24,21 +24,8 @@ def _forecast() -> AiForecast:
 
 def test_symbol_maps_cover_the_universe():
     assert CRYPTO_PAIRS == {"BTCUSD": "BTC/USDT", "ETHUSD": "ETH/USDT", "SOLUSD": "SOL/USDT"}
-    assert set(FOREX_TICKERS) == {
-        "EURUSD",
-        "GBPUSD",
-        "AUDUSD",
-        "NZDUSD",
-        "USDCAD",
-        "USDCHF",
-        "USDJPY",
-        "EURJPY",
-        "GBPJPY",
-        "XAUUSD",
-        "XAGUSD",
-    }
+    assert list(FOREX_TICKERS) == ["XAUUSD", "EURUSD", "AUDUSD", "GBPUSD", "GBPJPY", "EURJPY"]
     assert FOREX_TICKERS["XAUUSD"] == "GC=F"
-    assert FOREX_TICKERS["XAGUSD"] == "SI=F"
     assert venue_for("btcusd") == "crypto"
     assert venue_for("XAUUSD") == "forex"
     assert MODEL == "gemini-3.8-flash"
@@ -80,6 +67,11 @@ async def test_predict_returns_pending_then_pushes_and_caches():
         cached = await service.predict("BTCUSD")
         assert cached["disclaimer"] == DISCLAIMER
         assert calls["n"] == 1
+        again = await service.predict("BTCUSD", refresh=True)
+        assert again == {"status": "pending", "symbol": "BTCUSD"}
+        refreshed = await asyncio.wait_for(updates.get(), timeout=2)
+        assert refreshed["status"] == "ready"
+        assert calls["n"] == 2
     finally:
         service.broadcaster.unsubscribe(updates)
         await service.aclose()

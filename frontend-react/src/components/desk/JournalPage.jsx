@@ -86,6 +86,7 @@ export default function JournalPage({ token, deltaAccounts = [], mt5Accounts = [
   const loadSaved = async () => {
     const savedData = await api("/journal", { token });
     setSaved(savedData.entries || []);
+    onChanged?.();
   };
 
   const fetchRecent = async (next) => {

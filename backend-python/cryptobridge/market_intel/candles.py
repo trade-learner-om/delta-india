@@ -13,17 +13,12 @@ CRYPTO_PAIRS = {
 }
 
 FOREX_TICKERS = {
-    "EURUSD": "EURUSD=X",
-    "GBPUSD": "GBPUSD=X",
-    "AUDUSD": "AUDUSD=X",
-    "NZDUSD": "NZDUSD=X",
-    "USDCAD": "USDCAD=X",
-    "USDCHF": "USDCHF=X",
-    "USDJPY": "USDJPY=X",
-    "EURJPY": "EURJPY=X",
-    "GBPJPY": "GBPJPY=X",
     "XAUUSD": "GC=F",
-    "XAGUSD": "SI=F",
+    "EURUSD": "EURUSD=X",
+    "AUDUSD": "AUDUSD=X",
+    "GBPUSD": "GBPUSD=X",
+    "GBPJPY": "GBPJPY=X",
+    "EURJPY": "EURJPY=X",
 }
 
 

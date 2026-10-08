@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ShieldAlert, SlidersHorizontal } from "lucide-react";
 import { api } from "../../api";
+import { decoratePositionRow } from "../positions/positionsUtils";
 import { livePriceFromTick, lookupLiveTick } from "../../utils/pricePrecision";
 import ChoiceSwitch from "./ChoiceSwitch";
+import OpenBookTiles from "./OpenBook";
 import PriceFlashTicker from "./PriceFlashTicker";
 import { formatPrice, ledgerField, ledgerMuted, ledgerPanel, money, orderPriceMessage, rewardRisk, roundToStep, targetPriceFromR } from "./deskFormat";
 
@@ -31,7 +33,7 @@ function accountForVenue(venue, deltaAccounts, mt5Accounts) {
   return (list || []).find((account) => account.selected) || ((list || []).length === 1 ? list[0] : null);
 }
 
-export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrices, onNotify, onReload }) {
+export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrices, positionsPayload, onNotify, onReload }) {
   const [form, setForm] = useState(EMPTY);
   const [preview, setPreview] = useState(null);
   const [sizeError, setSizeError] = useState("");
@@ -247,8 +249,17 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
     ["Stop distance", Number.isFinite(stopDistance) && stopDistance > 0 ? stopDistance : "—"],
   ];
 
+  const book = positionsPayload?.type === "positions" ? positionsPayload : null;
+  const positions = useMemo(
+    () => (book?.openPositions || []).map((row) => decoratePositionRow(row, livePrices)),
+    [book, livePrices],
+  );
+  const orders = book?.openOrders || [];
+
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="space-y-4">
+      <OpenBookTiles positions={positions} orders={orders} />
+      <div className="grid gap-4 lg:grid-cols-2">
       <section className={`p-6 ${ledgerPanel}`}>
         <h1 className="text-xl">Trade</h1>
         <p className={`mt-1 text-sm ${ledgerMuted}`}>Size comes from the risk amount for this venue.</p>
@@ -410,6 +421,7 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
           ))}
         </dl>
       </section>
+      </div>
     </div>
   );
 }

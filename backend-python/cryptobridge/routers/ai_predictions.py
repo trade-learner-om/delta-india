@@ -15,8 +15,9 @@ def get_ai_predictions(request: Request) -> AiPredictionService:
 @router.get("")
 async def ai_predictions(
     symbol: str = Query(...),
+    refresh: bool = Query(False),
     user=Depends(get_user),
     service: AiPredictionService = Depends(get_ai_predictions),
 ):
     del user
-    return await service.predict(symbol)
+    return await service.predict(symbol, refresh=refresh)

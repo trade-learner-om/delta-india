@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, BrainCircuit, ChevronLeft, ChevronRight, Coins, Globe } from "lucide-react";
+import { AlertTriangle, BrainCircuit, ChevronLeft, ChevronRight, Coins, Globe, RotateCw } from "lucide-react";
 import { api } from "../../api";
 import CoinIcon from "../CoinIcon";
 import { livePriceFromTick, lookupLiveTick } from "../../utils/pricePrecision";
@@ -25,7 +25,7 @@ const TILES = [
     title: "Forex Market Overview",
     venue: "forex",
     Icon: Globe,
-    symbols: ["EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY", "EURJPY", "GBPJPY", "XAUUSD", "XAGUSD"],
+    symbols: ["XAUUSD", "EURUSD", "AUDUSD", "GBPUSD", "GBPJPY", "EURJPY"],
   },
 ];
 
@@ -75,6 +75,11 @@ export default function MarketOutlook({ token, livePrices, forecasts }) {
       });
       return next;
     });
+    TILES.forEach((tile) => {
+      tile.symbols.forEach((symbol) => {
+        api("/market/subscribe", { method: "POST", token, body: { venue: tile.venue, symbol } }).catch(() => {});
+      });
+    });
     (async () => {
       for (const symbol of symbols) {
         if (cancelled) return;
@@ -122,13 +127,19 @@ function ForecastTile({ tile, page, onPage, rows, livePrices }) {
         <tile.Icon size={16} />
         {tile.title}
       </h2>
-      <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
+      <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-200">
         <AlertTriangle size={14} className="shrink-0" />
         <p>{CAUTION}</p>
       </div>
       <div className="grid min-h-[17rem] flex-1 grid-rows-2 gap-3">
         {visible.map((symbol) => (
-          <ForecastRow key={symbol} symbol={symbol} row={rows[symbol]} livePrices={livePrices} />
+          <ForecastRow
+            key={symbol}
+            symbol={symbol}
+            row={rows[symbol]}
+            livePrices={livePrices}
+            onRetry={() => retryForecast(token, symbol, setRows)}
+          />
         ))}
         {visible.length < 2 ? <div aria-hidden="true" /> : null}
       </div>
@@ -167,7 +178,21 @@ function ForecastTile({ tile, page, onPage, rows, livePrices }) {
   );
 }
 
-function ForecastRow({ symbol, row, livePrices }) {
+function retryForecast(token, symbol, setRows) {
+  setRows((current) => ({ ...current, [symbol]: { status: "loading" } }));
+  api(`/ai-predictions?symbol=${encodeURIComponent(symbol)}&refresh=1`, { token })
+    .then((data) => {
+      if (data?.status === "pending") return;
+      if (data?.horizon_1h) {
+        setRows((current) => ({ ...current, [symbol]: { status: "ready", data } }));
+      }
+    })
+    .catch((err) => {
+      setRows((current) => ({ ...current, [symbol]: { status: "error", error: err.message || "Forecast unavailable." } }));
+    });
+}
+
+function ForecastRow({ symbol, row, livePrices, onRetry }) {
   const price = livePriceFromTick(lookupLiveTick(livePrices, symbol));
   return (
     <article className="rounded-xl border border-[var(--ledger-border)] p-3">
@@ -181,6 +206,14 @@ function ForecastRow({ symbol, row, livePrices }) {
           <PriceFlashTicker value={price} className={`text-sm ${ledgerMuted}`}>
             {price == null ? "—" : formatPrice(price)}
           </PriceFlashTicker>
+          <button
+            type="button"
+            aria-label="Retry"
+            onClick={onRetry}
+            className={`inline-flex h-5 w-5 items-center justify-center rounded-full border border-[var(--ledger-border)] ${ledgerMuted}`}
+          >
+            <RotateCw size={12} />
+          </button>
           <RationaleTip text={row?.status === "ready" ? row.data?.technical_rationale : ""} />
         </div>
       </div>
