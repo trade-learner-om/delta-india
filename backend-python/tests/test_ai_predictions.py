@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import threading
 
 import pytest
 from fastapi import HTTPException
@@ -54,7 +56,7 @@ def test_horizon_percentages_stay_in_range():
 
 
 @pytest.mark.asyncio
-async def test_predict_uses_the_fixed_disclaimer_and_cache():
+async def test_predict_returns_pending_then_pushes_and_caches():
     calls = {"n": 0}
 
     def fetch(symbol):
@@ -66,12 +68,58 @@ async def test_predict_uses_the_fixed_disclaimer_and_cache():
         return _forecast()
 
     service = AiPredictionService("test-key", fetch=fetch, generate=generate)
-    first = await service.predict("btcusd")
-    second = await service.predict("BTCUSD")
-    assert first["disclaimer"] == DISCLAIMER
-    assert first["venue"] == "crypto"
-    assert second is first or second["technical_rationale"] == first["technical_rationale"]
-    assert calls["n"] == 1
+    updates = service.broadcaster.subscribe()
+    try:
+        pending = await service.predict("btcusd")
+        assert pending == {"status": "pending", "symbol": "BTCUSD"}
+        ready = await asyncio.wait_for(updates.get(), timeout=2)
+        assert ready["status"] == "ready"
+        assert ready["type"] == "ai-prediction"
+        assert ready["disclaimer"] == DISCLAIMER
+        assert ready["venue"] == "crypto"
+        cached = await service.predict("BTCUSD")
+        assert cached["disclaimer"] == DISCLAIMER
+        assert calls["n"] == 1
+    finally:
+        service.broadcaster.unsubscribe(updates)
+        await service.aclose()
+
+
+@pytest.mark.asyncio
+async def test_forecast_jobs_run_one_at_a_time():
+    started = threading.Event()
+    release = threading.Event()
+
+    def fetch(symbol):
+        return "crypto", [{"time": 1, "open": 1, "high": 2, "low": 1, "close": 2, "volume": 3}]
+
+    def generate(prompt):
+        started.set()
+        assert release.wait(timeout=2)
+        return _forecast()
+
+    service = AiPredictionService("test-key", fetch=fetch, generate=generate)
+    updates = service.broadcaster.subscribe()
+    try:
+        await service.predict("BTCUSD")
+        await service.predict("ETHUSD")
+        for _ in range(40):
+            if started.is_set():
+                break
+            await asyncio.sleep(0.05)
+        assert started.is_set()
+        await asyncio.sleep(0.05)
+        assert updates.empty()
+        release.set()
+        first = await asyncio.wait_for(updates.get(), timeout=2)
+        second = await asyncio.wait_for(updates.get(), timeout=2)
+        assert {first["symbol"], second["symbol"]} == {"BTCUSD", "ETHUSD"}
+        assert first["status"] == "ready"
+        assert second["status"] == "ready"
+    finally:
+        release.set()
+        service.broadcaster.unsubscribe(updates)
+        await service.aclose()
 
 
 @pytest.mark.asyncio

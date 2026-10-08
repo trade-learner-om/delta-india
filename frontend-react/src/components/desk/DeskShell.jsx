@@ -19,7 +19,7 @@ const PAGES = [
 
 applyThemeClass(readStoredTheme());
 
-export default function DeskShell({ token, me, livePrices, liveStatus, positionsPayload, onLogout, onNotify, onSessionRefresh }) {
+export default function DeskShell({ token, me, livePrices, liveStatus, positionsPayload, forecasts, onLogout, onNotify, onSessionRefresh }) {
   const [page, setPage] = useState("home");
   const [theme, setTheme] = useState(readStoredTheme);
   const [entries, setEntries] = useState([]);
@@ -105,6 +105,7 @@ export default function DeskShell({ token, me, livePrices, liveStatus, positions
               watchlist={watchlist}
               livePrices={livePrices}
               positionsPayload={positionsPayload}
+              forecasts={forecasts}
               onOpenTrade={setOpenTrade}
               onWatchlistChange={reload}
               onNotify={onNotify}

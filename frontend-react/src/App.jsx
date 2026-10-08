@@ -62,6 +62,7 @@ export default function App() {
   const [livePrices, setLivePrices] = useState({});
   const [terminal, setTerminal] = useState(EMPTY_TERMINAL);
   const [positionsPayload, setPositionsPayload] = useState(null);
+  const [forecasts, setForecasts] = useState({});
   const [executionMonitors, setExecutionMonitors] = useState([]);
   const [stOptionsSession, setStOptionsSession] = useState(null);
   const [cascadeStarSession, setCascadeStarSession] = useState(null);
@@ -105,6 +106,7 @@ export default function App() {
     setAccounts([]);
     setLivePrices({});
     setPositionsPayload(null);
+    setForecasts({});
     setExecutionMonitors([]);
     setStOptionsSession(null);
     setTerminal(EMPTY_TERMINAL);
@@ -233,6 +235,10 @@ export default function App() {
     if (payload.type === "margin") {
       setAccounts((current) => patchAccountMargin(current, payload));
       lastLiveDataAtRef.current = Date.now();
+      return;
+    }
+    if (payload.type === "ai-prediction" && payload.symbol) {
+      setForecasts((current) => ({ ...current, [payload.symbol]: payload }));
     }
   }, [applySnapshot]);
 
@@ -450,6 +456,7 @@ export default function App() {
         livePrices={livePrices}
         liveStatus={liveStatus}
         positionsPayload={positionsPayload}
+        forecasts={forecasts}
         onLogout={handleLogout}
         onNotify={notify}
         onSessionRefresh={() => refreshBootstrap(token)}

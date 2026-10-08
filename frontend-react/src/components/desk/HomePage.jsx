@@ -44,7 +44,7 @@ function sizeLabel(value) {
   return String(number);
 }
 
-export default function HomePage({ token, entries, watchlist, livePrices, positionsPayload, onOpenTrade, onWatchlistChange, onNotify, onOpenJournal }) {
+export default function HomePage({ token, entries, watchlist, livePrices, positionsPayload, forecasts, onOpenTrade, onWatchlistChange, onNotify, onOpenJournal }) {
   const [restBook, setRestBook] = useState(null);
   useEffect(() => {
     if (!token) return undefined;
@@ -84,7 +84,6 @@ export default function HomePage({ token, entries, watchlist, livePrices, positi
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto]">
       <div className="space-y-4">
-        <MarketOutlook token={token} livePrices={livePrices} />
         {positions.length || orders.length ? (
           <div className={`grid gap-3 ${positions.length && orders.length ? "md:grid-cols-2" : ""}`}>
             {positions.length ? <RunningPositions rows={positions} /> : null}
@@ -175,6 +174,7 @@ export default function HomePage({ token, entries, watchlist, livePrices, positi
             </div>
           </section>
         </div>
+        <MarketOutlook token={token} livePrices={livePrices} forecasts={forecasts} />
         <section className={`p-4 ${ledgerPanel}`}>
           <h2 className={`text-sm ${ledgerMuted}`}>Recent trades</h2>
           {recent.length === 0 ? (

@@ -87,6 +87,7 @@ async def live_socket(websocket: WebSocket, token: str = Query("")):
     positions_queue = None
     execution_queue = None
     st_options_queue = None
+    forecast_queue = None
     user_id = ""
     worker_tasks: list[asyncio.Task] = []
     connected = True
@@ -150,6 +151,9 @@ async def live_socket(websocket: WebSocket, token: str = Query("")):
                 await send_payload(await st_options_service.live_snapshot(user))
             except Exception:
                 pass
+        ai_predictions = getattr(state, "ai_predictions", None)
+        if ai_predictions is not None:
+            forecast_queue = ai_predictions.broadcaster.subscribe()
 
         send_lock = asyncio.Lock()
 
@@ -266,6 +270,13 @@ async def live_socket(websocket: WebSocket, token: str = Query("")):
                     return
                 _enqueue(session_outbox, {**payload, "topic": "st_options"})
 
+        async def forward_forecast_queue(queue: asyncio.Queue[dict[str, Any]]) -> None:
+            while connected:
+                payload = await queue.get()
+                if not connected:
+                    return
+                _enqueue(session_outbox, payload)
+
         async def receive_client() -> None:
             nonlocal connected
             while connected:
@@ -292,6 +303,10 @@ async def live_socket(websocket: WebSocket, token: str = Query("")):
         if st_options_queue is not None:
             worker_tasks.append(
                 asyncio.create_task(forward_st_options_queue(st_options_queue), name="live-st-options")
+            )
+        if forecast_queue is not None:
+            worker_tasks.append(
+                asyncio.create_task(forward_forecast_queue(forecast_queue), name="live-forecast")
             )
 
         await asyncio.gather(*worker_tasks, return_exceptions=True)
@@ -332,5 +347,9 @@ async def live_socket(websocket: WebSocket, token: str = Query("")):
             execution_engine.broadcaster.unsubscribe(user_id, execution_queue)
         if st_options_queue is not None and st_options_service is not None:
             st_options_service.broadcaster.unsubscribe(user_id, st_options_queue)
+        if forecast_queue is not None:
+            ai_predictions = getattr(state, "ai_predictions", None)
+            if ai_predictions is not None:
+                ai_predictions.broadcaster.unsubscribe(forecast_queue)
         if user_id:
             await private_stream.detach_live_client(user_id)

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from typing import Any, Callable
+
+from fastapi import HTTPException
 
 from cryptobridge.exceptions import http_error
 from cryptobridge.market_intel.candles import fetch_candles
@@ -13,6 +16,31 @@ log = logging.getLogger(__name__)
 
 MODEL = "gemini-3.8-flash"
 CACHE_SECONDS = 15 * 60
+
+
+class ForecastBroadcaster:
+    def __init__(self) -> None:
+        self._queues: set[asyncio.Queue[dict[str, Any]]] = set()
+
+    def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=64)
+        self._queues.add(queue)
+        return queue
+
+    def unsubscribe(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
+        self._queues.discard(queue)
+
+    def publish(self, payload: dict[str, Any]) -> None:
+        for queue in list(self._queues):
+            try:
+                queue.put_nowait(payload)
+            except asyncio.QueueFull:
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                with contextlib.suppress(asyncio.QueueFull):
+                    queue.put_nowait(payload)
 
 
 class AiPredictionService:
@@ -26,9 +54,21 @@ class AiPredictionService:
         self._api_key = str(api_key or "").strip()
         self._fetch = fetch or fetch_candles
         self._generate = generate or self._generate_with_gemini
+        self.broadcaster = ForecastBroadcaster()
         self._cache: dict[str, tuple[float, dict[str, Any]]] = {}
-        self._inflight: dict[str, asyncio.Task[dict[str, Any]]] = {}
+        self._queued: set[str] = set()
+        self._jobs: asyncio.Queue[str] = asyncio.Queue()
+        self._worker: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
+
+    async def aclose(self) -> None:
+        worker = self._worker
+        self._worker = None
+        if worker is None:
+            return
+        worker.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await worker
 
     async def predict(self, symbol: str) -> dict[str, Any]:
         if not self._api_key:
@@ -40,17 +80,36 @@ class AiPredictionService:
             cached = self._fresh(key)
             if cached is not None:
                 return cached
-            task = self._inflight.get(key)
-            if task is None:
-                task = asyncio.create_task(self._build(key))
-                self._inflight[key] = task
-        try:
-            return await task
-        finally:
-            async with self._lock:
-                current = self._inflight.get(key)
-                if current is task:
-                    self._inflight.pop(key, None)
+            if key not in self._queued:
+                self._queued.add(key)
+                self._jobs.put_nowait(key)
+            self._ensure_worker()
+        return {"status": "pending", "symbol": key}
+
+    def _ensure_worker(self) -> None:
+        if self._worker is not None and not self._worker.done():
+            return
+        self._worker = asyncio.create_task(self._run(), name="ai-predictions")
+
+    async def _run(self) -> None:
+        while True:
+            symbol = await self._jobs.get()
+            try:
+                payload = await self._build(symbol)
+                self.broadcaster.publish({"type": "ai-prediction", "status": "ready", **payload})
+            except Exception as exc:  # noqa: BLE001
+                self.broadcaster.publish(
+                    {
+                        "type": "ai-prediction",
+                        "status": "error",
+                        "symbol": symbol,
+                        "error": _error_text(exc),
+                    }
+                )
+            finally:
+                async with self._lock:
+                    self._queued.discard(symbol)
+                self._jobs.task_done()
 
     async def _build(self, symbol: str) -> dict[str, Any]:
         venue, candles = await asyncio.to_thread(self._fetch, symbol)
@@ -102,6 +161,16 @@ class AiPredictionService:
         if not text:
             raise http_error(502, "The forecast model did not respond.")
         return AiForecast.model_validate_json(text)
+
+
+def _error_text(exc: Exception) -> str:
+    if isinstance(exc, HTTPException):
+        detail = exc.detail
+        if isinstance(detail, dict):
+            return str(detail.get("detail") or detail.get("error") or "Forecast unavailable.")
+        if detail:
+            return str(detail)
+    return "Forecast unavailable."
 
 
 def _log_gemini_response(response: Any) -> None:
