@@ -46,6 +46,52 @@ async def preview_order(
     return await orders.preview(user, payload)
 
 
+class PendingOrderRequest(BaseModel):
+    venue: str
+    account_id: str = Field(alias="accountId")
+    order_id: int = Field(alias="orderId")
+
+    model_config = {"populate_by_name": True}
+
+
+class EditPendingOrderRequest(PendingOrderRequest):
+    price: float
+    size: float | None = None
+
+
+@router.post("/pending/cancel")
+async def cancel_pending_order(
+    body: PendingOrderRequest,
+    user=Depends(get_user),
+    orders: OrderService = Depends(get_order_service),
+    mt5_accounts: Mt5AccountService = Depends(get_mt5_account_service),
+    positions: PositionsService = Depends(get_positions_service),
+):
+    if str(body.venue or "").lower() == "forex":
+        await mt5_accounts.cancel_pending(user, body.account_id, body.order_id)
+    else:
+        await orders.cancel_on_account(user, body.account_id, body.order_id)
+    await positions.publish_after_order(user)
+    return {"ok": True}
+
+
+@router.post("/pending/edit")
+async def edit_pending_order(
+    body: EditPendingOrderRequest,
+    user=Depends(get_user),
+    orders: OrderService = Depends(get_order_service),
+    mt5_accounts: Mt5AccountService = Depends(get_mt5_account_service),
+    positions: PositionsService = Depends(get_positions_service),
+):
+    if str(body.venue or "").lower() == "forex":
+        result = await mt5_accounts.edit_pending(user, body.account_id, body.order_id, body.price, body.size)
+    else:
+        await orders.edit_on_account(user, body.account_id, body.order_id, body.price, body.size)
+        result = {"ok": True}
+    await positions.publish_after_order(user)
+    return result
+
+
 @router.post("")
 async def place_order(
     body: PlaceOrderRequest,

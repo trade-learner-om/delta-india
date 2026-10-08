@@ -14,6 +14,7 @@ from cryptobridge.delta.rest_client import (
 from cryptobridge.exceptions import http_error
 from cryptobridge.utils import crypto as secret_crypto
 from cryptobridge.utils.order_prices import validate_order_prices
+from cryptobridge.utils.pending_orders import delta_edit_price_key
 from cryptobridge.utils.risk_sizing import RiskSizingError, compute_position_size
 
 
@@ -113,6 +114,52 @@ class OrderService:
         self._ensure_delta_account(account)
         api_key, api_secret = self._credentials(account)
         await self._delta.cancel_order(api_key, api_secret, order_id)
+
+    async def cancel_on_account(self, user: dict[str, Any], account_id: str, order_id: int) -> None:
+        account = await self._owned_account(user, account_id)
+        self._ensure_delta_account(account)
+        api_key, api_secret = self._credentials(account)
+        await self._delta.cancel_order(api_key, api_secret, int(order_id))
+
+    async def edit_on_account(
+        self,
+        user: dict[str, Any],
+        account_id: str,
+        order_id: int,
+        price: float,
+        size: float | None,
+    ) -> None:
+        if price is None or float(price) <= 0:
+            raise http_error(400, "Price must be greater than zero.")
+        account = await self._owned_account(user, account_id)
+        self._ensure_delta_account(account)
+        api_key, api_secret = self._credentials(account)
+        order = await self._delta.fetch_order(api_key, api_secret, int(order_id))
+        if order is None:
+            raise http_error(404, "Pending order was not found.")
+        product = await self._delta.fetch_product(order.symbol)
+        key = delta_edit_price_key(order.order_type, order.stop_order_type, order.limit_price, order.stop_price)
+        try:
+            await self._delta.edit_order(
+                api_key,
+                api_secret,
+                int(order_id),
+                product.product_id,
+                limit_price=float(price) if key == "limit_price" else None,
+                stop_price=float(price) if key == "stop_price" else None,
+                size=None if size is None else float(size),
+            )
+        except ValueError as exc:
+            raise http_error(400, str(exc)) from exc
+
+    async def _owned_account(self, user: dict[str, Any], account_id: str) -> dict:
+        try:
+            account = await self._account_service.get_account(user["id"], account_id)
+        except Exception:
+            account = None
+        if not account:
+            raise http_error(404, "Account not found.")
+        return account
 
     async def _selected_account(self, user: dict[str, Any]) -> dict:
         if not user.get("selectedAccountId"):

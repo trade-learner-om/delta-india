@@ -28,6 +28,14 @@ function limitR(value) {
   return match ? match[0] : "";
 }
 
+function newerBook(rest, live) {
+  if (!live || live.type !== "positions") return rest;
+  if (!rest) return live;
+  const liveAt = Date.parse(live.updatedAt || "") || 0;
+  const restAt = Date.parse(rest.updatedAt || "") || 0;
+  return liveAt >= restAt ? live : rest;
+}
+
 function accountForVenue(venue, deltaAccounts, mt5Accounts) {
   const list = venue === "forex" ? mt5Accounts : deltaAccounts;
   return (list || []).find((account) => account.selected) || ((list || []).length === 1 ? list[0] : null);
@@ -249,7 +257,9 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
     ["Stop distance", Number.isFinite(stopDistance) && stopDistance > 0 ? stopDistance : "—"],
   ];
 
-  const book = positionsPayload?.type === "positions" ? positionsPayload : null;
+  const [restBook, setRestBook] = useState(null);
+  const liveBook = positionsPayload?.type === "positions" ? positionsPayload : null;
+  const book = newerBook(restBook, liveBook);
   const positions = useMemo(
     () => (book?.openPositions || []).map((row) => decoratePositionRow(row, livePrices)),
     [book, livePrices],
@@ -258,7 +268,15 @@ export default function TradePage({ token, deltaAccounts, mt5Accounts, livePrice
 
   return (
     <div className="space-y-4">
-      <OpenBookTiles positions={positions} orders={orders} />
+      <OpenBookTiles
+        positions={positions}
+        orders={orders}
+        token={token}
+        onNotify={onNotify}
+        onChanged={() => {
+          api("/positions/open", { token }).then(setRestBook).catch(() => {});
+        }}
+      />
       <div className="grid gap-4 lg:grid-cols-2">
       <section className={`p-6 ${ledgerPanel}`}>
         <h1 className="text-xl">Trade</h1>

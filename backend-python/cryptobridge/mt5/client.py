@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from cryptobridge.mt5.terminal_detection import find_running_terminal_paths
 from cryptobridge.utils.forex_risk import normalize_price_to_symbol, normalize_volume_to_risk
+from cryptobridge.utils.pending_orders import mt5_volume_replaces
 
 log = logging.getLogger(__name__)
 
@@ -87,6 +88,24 @@ def _naive(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value
     return value.replace(tzinfo=None)
+
+
+def _pending_order(mt5, ticket: int) -> dict[str, Any]:
+    for row in mt5.orders_get() or []:
+        data = row._asdict() if hasattr(row, "_asdict") else dict(row)
+        if int(data.get("ticket") or 0) == int(ticket):
+            return data
+    raise LocalMt5Error("Pending order was not found.")
+
+
+def _send_trade(mt5, request: dict[str, Any], label: str) -> dict[str, Any]:
+    result = mt5.order_send(request)
+    if result is None:
+        raise LocalMt5Error(_last_error(mt5, f"{label} returned no result."))
+    data = result._asdict()
+    if data.get("retcode") not in {mt5.TRADE_RETCODE_DONE, mt5.TRADE_RETCODE_PLACED}:
+        raise LocalMt5Error(f"{label} rejected: retcode={data.get('retcode')} comment={data.get('comment')}")
+    return data
 
 
 def _last_error(mt5, default: str) -> str:
@@ -271,6 +290,77 @@ class Mt5Client:
                 "retcode": data.get("retcode"),
                 "raw": {key: data.get(key) for key in ("retcode", "order", "deal", "volume", "price", "comment")},
             }
+
+        return self._call(credentials, operation)
+
+    def cancel_pending(self, credentials: dict[str, str], ticket: int) -> None:
+        def operation(mt5):
+            request = {"action": mt5.TRADE_ACTION_REMOVE, "order": int(ticket)}
+            _send_trade(mt5, request, "MT5 cancel")
+
+        self._call(credentials, operation)
+
+    def edit_pending(
+        self,
+        credentials: dict[str, str],
+        ticket: int,
+        price: float,
+        size: float | None = None,
+    ) -> dict[str, Any]:
+        def operation(mt5):
+            current = _pending_order(mt5, int(ticket))
+            symbol = str(current.get("symbol") or "")
+            info = mt5.symbol_info(symbol)
+            if info is None:
+                raise LocalMt5Error(_last_error(mt5, f"No MT5 symbol specification for {symbol}."))
+            spec = _symbol_spec(info)
+            new_price = normalize_price_to_symbol(float(price), spec)
+            sl = float(current.get("sl") or 0)
+            tp = float(current.get("tp") or 0)
+            stoplimit = float(current.get("price_stoplimit") or 0)
+            current_volume = float(current.get("volume_current") or current.get("volume_initial") or 0)
+            if not mt5_volume_replaces(current_volume, size):
+                request = {
+                    "action": mt5.TRADE_ACTION_MODIFY,
+                    "order": int(ticket),
+                    "price": new_price,
+                    "sl": sl,
+                    "tp": tp,
+                    "type_time": int(current.get("type_time") or mt5.ORDER_TIME_GTC),
+                    "expiration": int(current.get("time_expiration") or 0),
+                    "type_filling": _filling_mode(mt5, info),
+                }
+                if stoplimit:
+                    request["stoplimit"] = normalize_price_to_symbol(stoplimit, spec)
+                _send_trade(mt5, request, "MT5 edit")
+                return {"orderId": str(ticket), "price": new_price, "volume": current_volume}
+            volume = normalize_volume_to_risk(
+                float(size),
+                volume_step=float(spec["volumeStep"]),
+                volume_min=float(spec["volumeMin"]),
+                volume_max=float(spec["volumeMax"]),
+            )
+            if volume <= 0:
+                raise LocalMt5Error("Order size is below the broker minimum.")
+            _send_trade(mt5, {"action": mt5.TRADE_ACTION_REMOVE, "order": int(ticket)}, "MT5 cancel")
+            replacement = {
+                "action": mt5.TRADE_ACTION_PENDING,
+                "symbol": symbol,
+                "volume": volume,
+                "type": int(current.get("type") or 0),
+                "price": new_price,
+                "sl": normalize_price_to_symbol(sl, spec),
+                "tp": normalize_price_to_symbol(tp, spec),
+                "deviation": 20,
+                "magic": 20261007,
+                "comment": "ledger",
+                "type_time": mt5.ORDER_TIME_GTC,
+                "type_filling": _filling_mode(mt5, info),
+            }
+            if stoplimit:
+                replacement["stoplimit"] = normalize_price_to_symbol(stoplimit, spec)
+            data = _send_trade(mt5, replacement, "MT5 replacement")
+            return {"orderId": str(data.get("order") or ""), "price": new_price, "volume": volume}
 
         return self._call(credentials, operation)
 

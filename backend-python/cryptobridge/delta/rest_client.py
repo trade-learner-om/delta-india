@@ -655,6 +655,30 @@ class DeltaRestClient:
     async def cancel_order(self, api_key: str, api_secret: str, order_id: int) -> None:
         await self._signed_delete(f"/v2/orders/{order_id}", api_key, api_secret, payload=None)
 
+    async def edit_order(
+        self,
+        api_key: str,
+        api_secret: str,
+        order_id: int,
+        product_id: int,
+        *,
+        limit_price: float | None = None,
+        stop_price: float | None = None,
+        size: float | None = None,
+    ) -> OrderSummary:
+        payload: dict[str, Any] = {"id": int(order_id), "product_id": int(product_id)}
+        if limit_price is not None:
+            payload["limit_price"] = str(limit_price)
+        if stop_price is not None:
+            payload["stop_price"] = str(stop_price)
+        if size is not None:
+            payload["size"] = normalize_order_size(size)
+        node = await self._signed_put("/v2/orders", api_key, api_secret, payload)
+        if isinstance(node, dict) and node.get("success") is False:
+            raise http_error(502, _delta_error_message(node, "Unable to edit the order."))
+        result = node.get("result", {}) if isinstance(node, dict) else {}
+        return self._map_order(result if isinstance(result, dict) else {})
+
     async def preview_order(self, api_key: str, api_secret: str, payload: dict) -> dict[str, Any]:
         outgoing = dict(payload)
         if "size" in outgoing:

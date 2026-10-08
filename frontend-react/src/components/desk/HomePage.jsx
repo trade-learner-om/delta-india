@@ -155,7 +155,15 @@ export default function HomePage({ token, entries, watchlist, livePrices, positi
           </section>
         </div>
         <MarketOutlook token={token} livePrices={livePrices} forecasts={forecasts} />
-        <OpenBookTiles positions={positions} orders={orders} />
+        <OpenBookTiles
+          positions={positions}
+          orders={orders}
+          token={token}
+          onNotify={onNotify}
+          onChanged={() => {
+            api("/positions/open", { token }).then(setRestBook).catch(() => {});
+          }}
+        />
         <section className={`p-4 ${ledgerPanel}`}>
           <h2 className={`text-sm ${ledgerMuted}`}>Recent trades</h2>
           {recent.length === 0 ? (

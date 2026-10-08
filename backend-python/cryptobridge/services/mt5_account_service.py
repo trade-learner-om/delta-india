@@ -252,6 +252,31 @@ class Mt5AccountService:
             raise http_error(400, str(exc)) from exc
         return {**preview, **placed}
 
+    async def cancel_pending(self, user: dict[str, Any], account_id: str, order_id: int) -> None:
+        account = await self._owned(user, account_id)
+        try:
+            self._client.cancel_pending(self.credentials_for(account), int(order_id))
+        except LocalMt5Error as exc:
+            raise http_error(400, str(exc)) from exc
+
+    async def edit_pending(
+        self,
+        user: dict[str, Any],
+        account_id: str,
+        order_id: int,
+        price: float,
+        size: float | None,
+    ) -> dict[str, Any]:
+        if price is None or float(price) <= 0:
+            raise http_error(400, "Price must be greater than zero.")
+        if size is not None and float(size) <= 0:
+            raise http_error(400, "Size must be greater than zero.")
+        account = await self._owned(user, account_id)
+        try:
+            return self._client.edit_pending(self.credentials_for(account), int(order_id), float(price), size)
+        except LocalMt5Error as exc:
+            raise http_error(400, str(exc)) from exc
+
     async def refresh_offset(self, account: dict[str, Any]) -> int:
         try:
             snapshot = self._client.account_snapshot(self.credentials_for(account))
@@ -268,6 +293,12 @@ class Mt5AccountService:
         account = await self.selected_account(user)
         if not account:
             raise http_error(400, "Select a forex account before placing this order.")
+        return account
+
+    async def _owned(self, user: dict[str, Any], account_id: str) -> dict[str, Any]:
+        account = await self._get(user, account_id)
+        if not account:
+            raise http_error(404, "Forex account not found.")
         return account
 
     async def _get(self, user: dict[str, Any], account_id: str) -> dict[str, Any] | None:
