@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from typing import Any, Callable
 
 from cryptobridge.exceptions import http_error
 from cryptobridge.market_intel.candles import fetch_candles
 from cryptobridge.market_intel.schema import DISCLAIMER, AiForecast
+
+log = logging.getLogger(__name__)
 
 MODEL = "gemini-2.5-flash"
 CACHE_SECONDS = 15 * 60
@@ -87,7 +90,9 @@ class AiPredictionService:
                 ),
             )
         except Exception as exc:  # noqa: BLE001
+            log.error("Gemini forecast request failed: %s: %s", type(exc).__name__, exc)
             raise http_error(502, "The forecast model did not respond.") from exc
+        _log_gemini_response(response)
         parsed = getattr(response, "parsed", None)
         if isinstance(parsed, AiForecast):
             return parsed
@@ -97,6 +102,20 @@ class AiPredictionService:
         if not text:
             raise http_error(502, "The forecast model did not respond.")
         return AiForecast.model_validate_json(text)
+
+
+def _log_gemini_response(response: Any) -> None:
+    candidates = getattr(response, "candidates", None) or []
+    finish_reason = getattr(candidates[0], "finish_reason", None) if candidates else None
+    log.info(
+        "Gemini forecast response text=%r parsed=%r finish_reason=%r",
+        getattr(response, "text", None),
+        getattr(response, "parsed", None),
+        finish_reason,
+    )
+    prompt_feedback = getattr(response, "prompt_feedback", None)
+    if prompt_feedback is not None:
+        log.info("Gemini forecast prompt_feedback=%r", prompt_feedback)
 
 
 def _prompt(symbol: str, venue: str, candles: list[dict[str, Any]]) -> str:

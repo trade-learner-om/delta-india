@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -75,3 +77,63 @@ async def test_missing_api_key_is_unavailable():
     with pytest.raises(HTTPException) as exc:
         await service.predict("BTCUSD")
     assert exc.value.status_code == 503
+
+
+class _Candidate:
+    def __init__(self, finish_reason):
+        self.finish_reason = finish_reason
+
+
+class _GeminiResponse:
+    def __init__(self, text, parsed, finish_reason, prompt_feedback=None):
+        self.text = text
+        self.parsed = parsed
+        self.candidates = [_Candidate(finish_reason)]
+        self.prompt_feedback = prompt_feedback
+
+
+class _GeminiClient:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.models = self
+
+    def generate_content(self, **kwargs):
+        return _GeminiResponse(
+            text='{"marker":"candle-structure"}',
+            parsed=_forecast(),
+            finish_reason="STOP",
+            prompt_feedback="allowed",
+        )
+
+
+class _FailingGeminiClient:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.models = self
+
+    def generate_content(self, **kwargs):
+        raise RuntimeError("quota exceeded")
+
+
+def test_gemini_response_text_is_logged(monkeypatch, caplog):
+    monkeypatch.setattr("google.genai.Client", _GeminiClient)
+    service = AiPredictionService("secret-gemini-key")
+    with caplog.at_level(logging.INFO, logger="cryptobridge.market_intel.service"):
+        forecast = service._generate_with_gemini("prompt")
+    assert forecast.technical_rationale == "Higher lows on the last candles."
+    assert '{"marker":"candle-structure"}' in caplog.text
+    assert "STOP" in caplog.text
+    assert "allowed" in caplog.text
+    assert "secret-gemini-key" not in caplog.text
+
+
+def test_gemini_sdk_error_is_logged(monkeypatch, caplog):
+    monkeypatch.setattr("google.genai.Client", _FailingGeminiClient)
+    service = AiPredictionService("secret-gemini-key")
+    with caplog.at_level(logging.ERROR, logger="cryptobridge.market_intel.service"):
+        with pytest.raises(HTTPException) as exc:
+            service._generate_with_gemini("prompt")
+    assert exc.value.status_code == 502
+    assert "RuntimeError" in caplog.text
+    assert "quota exceeded" in caplog.text
+    assert "secret-gemini-key" not in caplog.text
