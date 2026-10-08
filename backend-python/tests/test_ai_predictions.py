@@ -182,6 +182,65 @@ def test_gemini_response_text_is_logged(monkeypatch, caplog):
     assert "secret-gemini-key" not in caplog.text
 
 
+class _BusyGeminiClient:
+    calls = 0
+
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.models = self
+
+    def generate_content(self, **kwargs):
+        type(self).calls += 1
+        if type(self).calls == 1:
+            raise RuntimeError("503 UNAVAILABLE")
+        return _GeminiResponse(
+            text='{"marker":"candle-structure"}',
+            parsed=_forecast(),
+            finish_reason="STOP",
+        )
+
+
+class _AlwaysBusyGeminiClient:
+    calls = 0
+
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.models = self
+
+    def generate_content(self, **kwargs):
+        type(self).calls += 1
+        raise RuntimeError("503 UNAVAILABLE")
+
+
+def test_gemini_retries_a_busy_response(monkeypatch, caplog):
+    delays = []
+    monkeypatch.setattr("google.genai.Client", _BusyGeminiClient)
+    monkeypatch.setattr("cryptobridge.market_intel.service.time.sleep", delays.append)
+    _BusyGeminiClient.calls = 0
+    service = AiPredictionService("secret-gemini-key")
+    with caplog.at_level(logging.WARNING, logger="cryptobridge.market_intel.service"):
+        forecast = service._generate_with_gemini("prompt")
+    assert forecast.technical_rationale == "Higher lows on the last candles."
+    assert _BusyGeminiClient.calls == 2
+    assert delays == [2]
+    assert "retrying in 2s" in caplog.text
+
+
+def test_gemini_busy_response_fails_after_three_tries(monkeypatch, caplog):
+    delays = []
+    monkeypatch.setattr("google.genai.Client", _AlwaysBusyGeminiClient)
+    monkeypatch.setattr("cryptobridge.market_intel.service.time.sleep", delays.append)
+    _AlwaysBusyGeminiClient.calls = 0
+    service = AiPredictionService("secret-gemini-key")
+    with caplog.at_level(logging.WARNING, logger="cryptobridge.market_intel.service"):
+        with pytest.raises(HTTPException) as exc:
+            service._generate_with_gemini("prompt")
+    assert exc.value.status_code == 502
+    assert _AlwaysBusyGeminiClient.calls == 3
+    assert delays == [2, 4]
+    assert "retrying in 4s" in caplog.text
+
+
 def test_gemini_sdk_error_is_logged(monkeypatch, caplog):
     monkeypatch.setattr("google.genai.Client", _FailingGeminiClient)
     service = AiPredictionService("secret-gemini-key")

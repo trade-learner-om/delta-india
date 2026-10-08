@@ -16,6 +16,8 @@ log = logging.getLogger(__name__)
 
 MODEL = "gemini-3.8-flash"
 CACHE_SECONDS = 15 * 60
+GEMINI_ATTEMPTS = 3
+GEMINI_RETRY_DELAYS = (2, 4)
 
 
 class ForecastBroadcaster:
@@ -139,18 +141,26 @@ class AiPredictionService:
         from google.genai import types
 
         client = genai.Client(api_key=self._api_key)
-        try:
-            response = client.models.generate_content(
-                model=MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=AiForecast,
-                ),
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.error("Gemini forecast request failed: %s: %s", type(exc).__name__, exc)
-            raise http_error(502, "The forecast model did not respond.") from exc
+        response = None
+        for attempt in range(GEMINI_ATTEMPTS):
+            try:
+                response = client.models.generate_content(
+                    model=MODEL,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=AiForecast,
+                    ),
+                )
+                break
+            except Exception as exc:  # noqa: BLE001
+                if attempt < GEMINI_ATTEMPTS - 1 and _is_gemini_unavailable(exc):
+                    delay = GEMINI_RETRY_DELAYS[attempt]
+                    log.warning("Gemini forecast busy, retrying in %ss: %s: %s", delay, type(exc).__name__, exc)
+                    time.sleep(delay)
+                    continue
+                log.error("Gemini forecast request failed: %s: %s", type(exc).__name__, exc)
+                raise http_error(502, "The forecast model did not respond.") from exc
         _log_gemini_response(response)
         parsed = getattr(response, "parsed", None)
         if isinstance(parsed, AiForecast):
@@ -161,6 +171,14 @@ class AiPredictionService:
         if not text:
             raise http_error(502, "The forecast model did not respond.")
         return AiForecast.model_validate_json(text)
+
+
+def _is_gemini_unavailable(exc: Exception) -> bool:
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    if code == 503:
+        return True
+    text = str(exc).upper()
+    return "503" in text and "UNAVAILABLE" in text
 
 
 def _error_text(exc: Exception) -> str:
