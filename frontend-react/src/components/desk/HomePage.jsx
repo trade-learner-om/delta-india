@@ -70,7 +70,6 @@ export default function HomePage({ token, entries, watchlist, livePrices, positi
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto]">
       <div className="space-y-4">
-        <OpenBookTiles positions={positions} orders={orders} />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {cards.map(([label, value, series]) => {
             const change = seriesChangePercent(series);
@@ -156,6 +155,7 @@ export default function HomePage({ token, entries, watchlist, livePrices, positi
           </section>
         </div>
         <MarketOutlook token={token} livePrices={livePrices} forecasts={forecasts} />
+        <OpenBookTiles positions={positions} orders={orders} />
         <section className={`p-4 ${ledgerPanel}`}>
           <h2 className={`text-sm ${ledgerMuted}`}>Recent trades</h2>
           {recent.length === 0 ? (
